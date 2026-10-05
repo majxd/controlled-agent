@@ -1,0 +1,101 @@
+# Architectural Decisions
+
+This records the agreed direction for Controlled Agent's first MVP. These are design decisions, not claims that controls have been implemented. Application implementation and model/provider selection have not started.
+
+The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
+
+## 1. Enforce governance deterministically outside the LLM
+
+**Decision:** Permissions, policy evaluation, risk classification, and decision outcomes are enforced by ordinary application code. Outcomes are `ALLOW`, `DENY`, and `REQUIRE_APPROVAL`.
+
+**Reasoning:** These rules need predictable, testable behavior. A model's interpretation or claim of permission is not authority. Governance considers the target, arguments, permissions, and policy, rather than deciding from a tool name alone. Risk does not grant permission, and a hard denial takes precedence over approval.
+
+**Tradeoff:** The MVP supports a deliberately small rule set. It will not build a general policy language or use an LLM to decide whether its own proposals are allowed.
+
+## 2. Separate action proposals from execution
+
+**Decision:** The agent produces structured action proposals. The application controller submits them to governance. Only the executor invokes registered tool handlers, using authorization issued by governance.
+
+**Reasoning:** Reasoning about an action must not confer the ability to execute it. The agent receives tool descriptions and results, not executable handlers or execution credentials. Tool definitions and argument validation alone are insufficient enforcement.
+
+**Consequence:** Every tool path follows agent → action request → governance → authorization → executor → tool. No convenience path may bypass this sequence. Tool handlers must also remain bounded to their intended resources and effects.
+
+## 3. Use Python 3.12+ and a single local CLI application
+
+**Decision:** The MVP runs locally in one Python 3.12+ process with explicit module responsibilities and terminal interaction. No framework or dependency has been selected.
+
+**Reasoning:** This keeps the control boundary visible without adding deployment, networking, or distributed state management. The demonstration needs only sequential local actions and in-memory approval/authorization state.
+
+**Security boundary:** The planned architecture addresses unsafe proposals and application mistakes through its defined interfaces. It cannot contain an implementation change that adds a direct tool-call path. Module boundaries are not a security sandbox against arbitrary malicious code running inside the same process; that threat is explicitly out of scope. This learning MVP is not a production-ready system.
+
+## 4. Issue internal, single-use execution authorization
+
+**Decision:** Governance owns authorization state. An authorization is bound to the exact validated action, including its tool, normalized arguments, and resolved target. The executor retrieves the authorized action from trusted internal state rather than accepting a caller's assertion that an arbitrary action is approved.
+
+**Reasoning:** A caller-supplied `approved=true` flag, a mutable action, or an authorization reusable for another target would defeat the control layer. Altering the action requires another governance decision.
+
+**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. The exact internal representation and normalization mechanics remain implementation details to review; this decision does not require cryptographic tokens or a separate service.
+
+## 5. Require explicit human approval for the exact sensitive action
+
+**Decision:** The trusted CLI obtains a one-time human decision for an action classified as requiring approval. It displays the validated tool, target work order, and proposed new status. The model cannot provide approval evidence on the human's behalf.
+
+**Reasoning:** The human must approve the actual requested effect. Approval is not a standing permission, and it cannot override a hard policy denial.
+
+**Consequence:** A declined, cancelled, or unanswered request is not executable. An edited request must be evaluated again. Pending approvals are held only in memory and are lost on restart; recovery workflows are outside this MVP.
+
+## 6. Keep the core domain-neutral and make the demonstration industrial
+
+**Decision:** Core contracts and responsibilities describe actions, tools, targets, permissions, policies, risk, decisions, authorization, and audit events. Fake work orders belong to the demonstration's tool definitions, sample data, and policy rules.
+
+**Reasoning:** An operations-oriented example makes the effects concrete without making industrial concepts prerequisites for using the governance core in another domain.
+
+**Consequence:** The MVP never connects to a real industrial system. The governance core must not depend on work-order-specific fields or statuses; the demo supplies the domain-specific validation and policy behavior through explicit interfaces.
+
+## 7. Demonstrate three outcomes with two tools
+
+**Decision:** Use `get_work_order` and `update_work_order_status`. An allowed read with valid arguments and permission is `LOW` risk → `ALLOW`. A normal editable status update with valid arguments and permission is `MEDIUM` risk → `REQUIRE_APPROVAL`. Any identifiable mutation of a protected or critical work order is `HIGH` risk → `DENY`, including an attempt to close it.
+
+**Reasoning:** Context-sensitive policy on the existing update tool proves both the approval and forbidden paths without adding another tool. Risk is derived from the action and trusted target metadata, not fixed per tool. These paths do not establish a universal risk-to-decision mapping: missing permissions still deny, and unresolvable malformed input may remain unclassified. A separate close action would add another contract and handler without materially improving this demonstration.
+
+**Confirmed demo setup:** Keep `demo_operator`, editable `WO-1001`, and protected and critical `WO-9001`, using fake local data. The three contextual risk rules above are user-approved. [ARCHITECTURE.md](ARCHITECTURE.md) distinguishes confirmed rules from remaining sample conventions, such as permitted statuses and fixture reset behavior.
+
+## 8. Use a fixed local caller and explicit permissions
+
+**Decision:** Begin with trusted application-supplied caller context and a small permission allowlist. Permission enforcement remains explicit even though the MVP has no account or authentication system.
+
+**Reasoning:** This demonstrates the difference between being permitted to request an operation and a policy permitting that particular action. It also makes missing-permission behavior testable without introducing identity infrastructure.
+
+**Consequence:** Caller identity, permissions, risk, and resource protection metadata are not accepted as authoritative model-supplied arguments. Multi-user authentication and multi-tenant authorization are outside scope.
+
+## 9. Audit locally and fail closed before execution
+
+**Decision:** Use a local JSONL audit log. Assign every submitted action an action ID, including malformed submissions. Record validation/decision outcomes, approval or decline, execution start, success, and failure with that correlation ID. Denied actions remain observable even though no tool runs.
+
+**Reasoning:** Observability must describe attempted actions as well as successful effects. If a required audit record cannot be written before execution, the action must not execute.
+
+**Limitations:** An unavailable audit sink cannot guarantee a persisted record of its own failure; the CLI must surface that failure. A crash or logging failure after a side effect can leave an uncertain outcome. Local JSONL is not a transactional, tamper-proof, or exactly-once execution mechanism. Audit failures after execution must not be presented as proof that the side effect did not happen. [ARCHITECTURE.md](ARCHITECTURE.md) defines the conceptual events and data-minimization boundary; concrete serialization details remain for implementation.
+
+## 10. Prove the boundary with scripted proposals first
+
+**Decision:** Build and test the deterministic control path using scripted action proposals before integrating an LLM.
+
+**Reasoning:** Repeatable inputs isolate permission, policy, approval, authorization, executor, and audit behavior from model variability. Security-relevant tests must verify that prohibited requests do not invoke handlers, rather than merely checking displayed decisions.
+
+**Consequence:** Scripted proposals stand in for the agent initially. The eventual model adapter must use the same action-request boundary.
+
+## 11. Defer managed model/API selection until the boundary works
+
+**Decision:** Remain provider-neutral now. Prefer modern managed agent/model APIs where they provide useful capabilities when model integration is considered, while keeping governance and execution control explicit in this application.
+
+**Reasoning:** Rebuilding commodity model infrastructure is not the learning objective. Permissions, policies, execution boundaries, and observability are.
+
+**Constraint:** A future integration must leave tool invocation under the application's authorized executor. SDK or hosted tool execution that bypasses governance, internal authorization, or the executor is excluded. No provider, SDK, model, credentials, or dependency is selected in Milestone 1.
+
+## 12. Keep the first MVP intentionally small
+
+**Decision:** Do not add cloud deployment, databases, queues, microservices, external infrastructure, a policy language, a vector database, multi-agent orchestration, unrestricted shell access, or unrestricted filesystem tools. Do not add automatic retries or durable approval recovery to this first prototype.
+
+**Reasoning:** These additions would create failure modes and operational work unrelated to proving the initial control boundary. Bounded local tools and short, deterministic flows are sufficient for the three required paths.
+
+**Consequence:** Scope expansion and meaningful architectural changes require explicit review. Documentation and focused tests accompany implementation milestones; infrastructure is not introduced without explicit approval.
