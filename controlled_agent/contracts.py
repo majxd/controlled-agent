@@ -214,7 +214,8 @@ class Authorization:
 
     Holds the full immutable action, including ID, caller, tool, arguments, and
     target. The authorization service publishes references only after trusted
-    ALLOW evaluation and mandatory audit writes; approval-required issuance is deferred.
+    ALLOW evaluation or explicit human approval of a validated REQUIRE_APPROVAL
+    action, and mandatory audit writes. DENY never permits issuance.
     Its private registry resolves and consumes identity-bound references. The
     future executor must use that boundary. Constructing this dataclass is not
     issuance, evidence of approval, or execution authority.

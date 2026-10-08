@@ -111,17 +111,22 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestones 2A and 2B are approved and committed: immutable contracts and
-deterministic governance with separate fake work-order rules/configuration.
-Milestone 3A adds a trusted authorization service for review, using only the
-Python standard library. It evaluates requests internally, retains the exact
-validated/resolved action, issues internal references only for ALLOW after
-mandatory audit writes, and consumes each reference at most once. Reserved
-action IDs cannot be reissued after failure, denial, or consumption.
+Milestones 2A, 2B, and 3A are approved and committed: immutable contracts,
+deterministic governance, and trusted single-use authorization. Milestone 3B adds
+optional synchronous human approval for review, using only the Python standard
+library. The service retains the exact validated/resolved action, permits ALLOW
+issuance directly, and permits REQUIRE_APPROVAL issuance only after explicit
+human approval and mandatory audit writes. DENY remains terminal. Reserved action
+IDs cannot be reissued after failure, denial, cancellation, or consumption.
 
 The pure evaluation API still returns decision data only. The service requires
 a trusted synchronous audit writer; only test writers exist so far. References
 are private process-local authority, never agent metadata or audit payloads.
-Raw proposal parsing, CLI, human approval, executor, tool handlers, concrete
+Review uses trusted injected formatting/display/input callbacks, with fake local
+work-order presentation. No concrete terminal interface or human authentication
+is implemented. Current-state display uses fixed resource metadata; external
+freshness and TOCTOU protection are deferred. Arguments and raw responses are
+omitted from audit events. Without approval configuration, 3A behavior is unchanged.
+Raw proposal parsing, CLI, executor, tool handlers, concrete
 audit storage, and model integration remain deferred. The full execution and
 durable audit boundary is not yet implemented.

@@ -12,12 +12,12 @@ when required.
 
 ## Status
 
-Milestones 2A and 2B are approved and committed. Milestone 3A trusted authorization
-issuance and single-use consumption are implemented for review. Pure governance
-still returns `GovernanceResult` data. The new host-only service calls governance
-itself, issues internal references for ALLOW only after mandatory audit writes,
-and consumes each reference once. It never executes a tool.
-Human approval, executor, tool handlers, concrete audit storage, CLI, and LLM
+Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B synchronous
+human approval is implemented for review. Pure governance still returns
+`GovernanceResult` data. The host-only service calls governance itself and issues
+references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
+mandatory audit writes. Each reference is consumed once; no tool executes.
+Executor, tool handlers, concrete audit storage, CLI, and LLM
 integration remain deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
@@ -36,7 +36,8 @@ python3.12 -B -m unittest discover -s tests -v
 
 The `controlled_agent/` package separates `contracts.py`, the domain-neutral
 `governance.py`, fake work-order rules/configuration in `demo.py`, and the internal
-`authorization.py` service. Tests live in `tests/`. `pyproject.toml` records project
+`authorization.py` service. `approval.py` defines immutable review data and trusted
+injected human I/O callbacks. Tests live in `tests/`. `pyproject.toml` records project
 metadata and the Python requirement; no installation or build setup is required.
 Passing these tests does not establish
 the deferred execution and audit boundary.
@@ -54,20 +55,41 @@ Trusted host code constructs `authorization.AuthorizationService` once per run
 with fixed configuration and a required synchronous `audit_write(event)` function.
 That writer must return `None` after successful write/flush, or raise; 3A provides
 no concrete sink or default no-op. `issue(request)` returns a reportable decision
-and a separate host-only reference (or `None` for DENY/REQUIRE_APPROVAL). Never send
+and a separate host-only reference (or `None` when no authorization is issued). Never send
 the tuple or reference to the proposal producer, or log the reference.
 
 `consume(reference)` returns the exact stored action once, without revalidation
 or argument replacement. A later executor must successfully audit execution start
 after consumption and before dispatch. Errors never restore consumed authority.
 Repeated action IDs, failed issuance, and reentrant operations cannot issue again;
-raw proposal parsing and human approval remain outside this API.
+raw proposal parsing remains outside this API.
+
+Approval is optional and configured only at construction: supply both
+`approval_formatter=demo.format_work_order_approval` and
+`human_approval=approval.HumanApprovalAdapter(display=..., read_response=...)`.
+The trusted display callback receives an immutable `ApprovalReview` containing
+the exact action identity and current/proposed state plus intended effect. It must
+present the complete review and return `None`, or raise. The input callback must
+collect one fresh human response. Only plain-string `approve`, with surrounding
+whitespace allowed, is affirmative. `decline` refuses; empty/None/other responses,
+EOF, errors, and interruptions never authorize. There is no default console I/O,
+public approval endpoint, or pending token. Missing approval configuration keeps
+the 3A behavior: REQUIRE_APPROVAL returns no reference.
+
+The returned governance decision stays REQUIRE_APPROVAL even after successful
+approval; the separate opaque reference represents issuance. Pending state closes
+before the approval-result audit. Audit failure or interruption cannot restore it
+or permit reissuance. DENY never prompts. The display uses the fixed trusted
+resource snapshot, not live resource state; external freshness/TOCTOU protection
+is not implemented. Callbacks remain trusted to present faithfully and obtain
+human input, and do not authenticate a person or prove that a screen was viewed.
 
 Audit events retain bounded public tool/target identifiers, with submission claims
 separate from resolved context and full-action validation status. DENY and
 REQUIRE_APPROVAL retain known resolution context too. Unknown claims and argument
 payloads are omitted, including from issuance events; exact arguments remain in
-the private action record. See the [3A retention policy](ARCHITECTURE.md#milestone-3a-audit-retention-policy).
+the private action record. Approval audits add fixed outcomes/reason codes, never
+review text or raw responses. See the [3A retention policy](ARCHITECTURE.md#milestone-3a-audit-retention-policy).
 
 ## MVP demo
 
@@ -86,7 +108,7 @@ permission, or claimed approval. Other unexpected argument fields are rejected.
 Statuses are `open`, `in_progress`, and `closed`; even a same-status editable
 update requires approval. No work-order state changes during evaluation.
 
-Authorization state expires on restart; future approval state will too. Future local
+Authorization and approval state expire on restart. Future local
 JSONL audit logs will persist without conveying execution rights.
 
 Industrial operations are the demonstration layer; the governance core remains

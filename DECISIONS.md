@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestones 2A and 2B are approved and committed. Milestone 3A trusted ALLOW-only issuance and consumption are implemented for review. Human approval, executor, concrete audit storage, CLI, and model/provider integration remain deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B synchronous human approval through trusted injected callbacks is implemented for review. Executor, concrete human I/O, audit storage, CLI, and model/provider integration remain deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -34,7 +34,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 **Reasoning:** A caller-supplied `approved=true` flag, a mutable action, or an authorization reusable for another target would defeat the control layer. Altering the action requires another governance decision.
 
-**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. Milestone 2A represents authorization data with a UUID, a complete immutable action, and usable/consumed state. Milestone 3A implements trusted ALLOW-only issuance, consumption, and reference resolution, preserving the action evaluated by governance. Approval-required issuance and actual execution remain deferred; constructing a record still grants no authority. This decision does not require cryptographic tokens or a separate service.
+**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. Milestone 2A represents authorization data with a UUID, a complete immutable action, and usable/consumed state. Milestone 3A implements trusted ALLOW-only issuance, consumption, and reference resolution, preserving the action evaluated by governance. Milestone 3B adds explicit human approval before issuance for REQUIRE_APPROVAL. Actual execution remains deferred; constructing a record still grants no authority. This decision does not require cryptographic tokens or a separate service.
 
 ## 5. Require explicit human approval for the exact sensitive action
 
@@ -218,7 +218,48 @@ future payload/result retention requires an explicit safe field policy. This
 resolves the non-issued-action audit context gap without adding authority to logs
 or implementing a concrete sink.
 
-**Deferred:** Human approval and its explicit display/response binding, raw
+**Deferred in Milestone 3A:** Human approval and its explicit display/response binding, raw
 submission parsing, concrete JSONL storage, executor, handlers, CLI, and LLM
 integration. Tombstones and consumed entries stay in memory until exit; no
 garbage-collection policy or durable rights recovery is introduced.
+
+## 16. Bind one synchronous human review to the retained action
+
+**Decision:** Milestone 3B extends the existing service with optional construction-time
+`approval_formatter` and `HumanApprovalAdapter` dependencies. Both must be supplied
+together. REQUIRE_APPROVAL then creates private pending state referencing the exact
+validated/resolved action and its governance result. Without configuration, 3A
+behavior remains unchanged. DENY never creates pending state, prompts, or issues.
+
+**Presentation:** The service creates immutable `ApprovalReview` data containing
+the canonical action. A trusted formatter returns only immutable current/proposed
+state and intended effect. Work-order presentation stays in `demo.py`, deriving
+statuses from canonical arguments and the same trusted resource snapshot used by
+governance. It ignores proposal-authored display text. The trusted display callback
+must present action ID, caller, tool, target, and exact change before the reader
+obtains one fresh human response. There is no concrete console adapter in 3B.
+
+**Response and failure boundary:** Only a plain string `approve`, allowing surrounding
+whitespace, affirms. `decline` refuses; empty/None/other values and EOF cancel. Errors,
+interruptions, and reentrancy never authorize. There is no public approval endpoint
+or externally usable pending token. Pending state closes irreversibly before result
+auditing and clears on every exit, while action IDs remain reserved. Changed actions
+need a fresh submission. Responses cannot carry replacement action fields or reusable
+approval records. The original REQUIRE_APPROVAL decision remains in the result tuple
+even when a separate execution reference is successfully issued.
+
+**Audit gates:** `approval_requested` must succeed before review callbacks. After
+closing pending state, write sanitized `approval_result`; only an affirmative result
+with successful auditing proceeds to `authorization_issued` and registry publication.
+All existing rollback and single-use guarantees remain. Approval audit details retain
+only bounded tool/target identifiers and fixed outcome/reason codes, never arguments,
+review text, raw responses, or exceptions. Failure can leave incomplete logs; no
+recursive audit retries or replay of audit data is allowed.
+
+**Tradeoffs and limits:** Synchronous review keeps the original service operation
+guard active and avoids asynchronous handles, expiry, and recovery machinery. Callback
+code is trusted to present faithfully and collect human input; authentication and
+verification that a person actually saw the display are not provided. Current-state
+display uses a fixed snapshot, not live data: freshness and external-state TOCTOU
+protection remain deferred. No executor, handlers, CLI, concrete sink, LLM, concurrency,
+persistence, or dependency is added.

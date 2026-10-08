@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Set
 from types import MappingProxyType
 
+from .approval import ApprovalChange
 from .contracts import ActionRequest, Decision, GovernanceResult, JSONValue, Risk, ToolDefinition
 from .governance import ToolRules, evaluate_action
 
@@ -104,3 +105,25 @@ def evaluate_demo(
 ) -> GovernanceResult:
     """Evaluate with fixed fake metadata and host-supplied permission configuration."""
     return evaluate_action(request, tools=TOOLS, permissions=permissions, resources=WORK_ORDERS)
+
+
+def format_work_order_approval(
+    action: ActionRequest, context: Mapping[str, JSONValue],
+) -> ApprovalChange:
+    """Describe a validated update using fixed trusted metadata, not live state.
+
+    No proposal-authored display text is used. This callback describes a change;
+    it does not validate governance, grant permission, or execute the change.
+    """
+    if action.tool_name != "update_work_order_status":
+        raise ValueError("No approval presentation is configured for this tool")
+    current = context.get("status")
+    proposed = action.arguments["new_status"]
+    if type(current) is not str or current not in STATUSES:
+        raise ValueError("Current state is unavailable for review")
+    if type(proposed) is not str or proposed not in STATUSES:
+        raise ValueError("Proposed state cannot be displayed")
+    return ApprovalChange(
+        current_state={"status": current}, proposed_state={"status": proposed},
+        intended_effect=f"Set this fake work order's status from {current} to {proposed}.",
+    )

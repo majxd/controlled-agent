@@ -4,9 +4,9 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 3A, trusted ALLOW-only authorization issuance and
-  single-use consumption, implemented for review. Milestones 2A and 2B are
-  approved and committed. Do not begin human approval, executor, tool-handler,
+- Current milestone: Milestone 3B, synchronous human approval workflow,
+  implemented for review. Milestones 2A, 2B, and 3A are approved and committed.
+  Do not begin executor, tool-handler,
   CLI, concrete audit-sink, or model implementation until authorized. Do not add
   dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
@@ -24,10 +24,17 @@
   before audit/policy callbacks; keep failures terminal. Its opaque references
   remain internal and never enter agent-facing data or audit payloads. Reentrant
   calls must abort the outer operation even if a callback catches the rejection.
-- Milestone 3A requires a trusted synchronous audit writer but implements no
-  concrete sink. DENY and REQUIRE_APPROVAL never issue references. Consumption
-  does not dispatch; a later executor must audit execution start after consuming
-  and before invoking a handler, with no restoration on failure.
+- The service requires a trusted synchronous audit writer but implements no
+  concrete sink. DENY never issues. REQUIRE_APPROVAL can issue only after one
+  explicit human response through construction-time trusted review callbacks and
+  successful approval-result/issuance audits. Without approval configuration it
+  still issues no reference. Pending state is private and terminal on every exit.
+  Consumption does not dispatch; a later executor must audit execution start after
+  consuming and before invoking a handler, with no restoration on failure.
+- Review callbacks may describe/present the exact canonical action and collect a
+  fresh human response only; they may not substitute action fields or supply model
+  text as approval. Current-state display uses a fixed resource snapshot, not live
+  state or TOCTOU protection. Do not log review text, arguments, or raw responses.
 
 ## Mandatory execution boundary
 

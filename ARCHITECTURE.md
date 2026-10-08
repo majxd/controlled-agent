@@ -5,10 +5,10 @@
 The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestones 2A and 2B are approved and committed. Milestone 3A adds
-trusted ALLOW-only authorization issuance and single-use consumption, under
-review. Human approval, executor, tool handlers, concrete audit storage, CLI,
-and provider integration remain deferred.
+per component. Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B
+adds optional synchronous human approval through trusted injected callbacks,
+under review. Executor, tool handlers, concrete audit storage, CLI, and provider
+integration remain deferred.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -62,8 +62,8 @@ must be written successfully before the handler can run.
 
 The table describes the intended control system. Milestone 2A implements the
 base records and enums; Milestone 2B adds the governance result and evaluation.
-Milestone 3A adds trusted issuance/consumption. Human approval, dispatch, and
-concrete audit storage remain deferred.
+Milestone 3A adds trusted issuance/consumption; 3B adds human approval using
+injected I/O. Dispatch, concrete terminal I/O, and audit storage remain deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -217,8 +217,8 @@ calls this path itself and stores that same action object, without a second
 evaluation or target resolution during issuance/consumption. DENY has no retained
 validated action, but internal evaluation separately returns a known resolved
 target for audit context when resolution succeeded. That identifier does not
-assert argument validity or permission. REQUIRE_APPROVAL returns no reference in 3A and creates no
-pending review or approval evidence.
+assert argument validity or permission. Without 3B approval configuration,
+REQUIRE_APPROVAL returns no reference and creates no pending review or approval evidence.
 
 Issuance ordering:
 
@@ -228,7 +228,8 @@ Issuance ordering:
    labeled as a submission claim, without an argument dump; evaluate; write
    `governance_decision`. A duplicate ID is audited as a duplicate denial and
    raises `DuplicateActionError`, without touching previously issued authority.
-3. Only ALLOW can continue. Construct internal record data; write
+3. ALLOW can continue directly; 3B additionally permits explicitly approved
+   REQUIRE_APPROVAL actions through the gates below. Construct internal record data; write
    `authorization_issued` with retained tool/target identifiers, caller, action ID,
    and an auditable UUID. Arguments stay in the exact private action record;
    validation alone does not make them safe to log. The UUID is not an execution reference.
@@ -261,7 +262,7 @@ registry reset, persistence, or rights recovery exists. The host must not create
 multiple live issuance authorities for the same run. Terminal entries accumulate
 in memory for the lifetime of this bounded prototype.
 
-This service has no handlers, human-input path, CLI, model integration, or concrete
+This service has no handlers, concrete terminal I/O, CLI, model integration, or concrete
 audit storage. Runtime reflection or malicious trusted callbacks can bypass Python
 privacy; those remain outside the application's interface-level threat model.
 
@@ -295,6 +296,77 @@ For example, they do not distinguish proposed status values on the same target
 except by action ID. Exact arguments stay in the private immutable action record
 for issued actions. Any later argument/result retention needs an explicit safe
 field policy; audit data can never recreate execution authority.
+
+### Milestone 3B synchronous human approval
+
+The host may supply both `approval_formatter` and `human_approval` when constructing
+the service. Supplying only one is an error. `HumanApprovalAdapter` holds trusted
+`display(ApprovalReview)` and `read_response()` callbacks; no default input source
+or concrete terminal adapter is implemented. Callbacks must be synchronous.
+The service controls their ordering and checks reentrancy after each callback.
+No review dependencies, responses, decisions, or replacement actions are accepted
+as per-request issuance arguments.
+
+After an internally evaluated REQUIRE_APPROVAL decision is audited, the service
+creates one private pending entry referencing the exact validated action and
+governance result. DENY cannot create pending state or invoke review callbacks.
+There is no public approval endpoint, exposed pending token, resume operation,
+or queue. The existing non-reentrant operation spans the entire exchange.
+
+1. Write `approval_requested` before any formatter/display/input callback. It
+   records that review was requested, not proof of successful presentation.
+2. Call the trusted formatter with the exact retained action and the immutable
+   resource snapshot already used by governance. There is no second resolution
+   or governance evaluation. The formatter returns `ApprovalChange` data: current
+   state, proposed state, and intended effect. The service separately constructs
+   an immutable `ApprovalReview` containing the original action identity, so the
+   formatter cannot replace the action used for issuance.
+3. Display the review, requiring a `None` return after successful presentation,
+   then read one fresh human response. Action ID, trusted caller, canonical tool,
+   target, and exact change must be presented. The demo formatter derives status
+   fields from canonical arguments and trusted metadata and uses a fixed effect
+   template; it does not accept proposal-authored descriptions as instructions.
+4. Irreversibly close the pending entry before writing `approval_result`. Only a
+   plain string whose surrounding-whitespace-trimmed value is exactly `approve`
+   is affirmative. `decline` refuses. Empty/None input cancels; any other object
+   or text, including booleans, dictionaries, string subclasses, and uppercase
+   `APPROVE`, cancels. No automatic reprompt occurs.
+5. Only an affirmative response with successful result auditing may reach the
+   existing authorization-issued audit and registry publication sequence. The
+   original governance result remains REQUIRE_APPROVAL in the returned tuple;
+   the separate reference represents issuance. All exact-action and one-use
+   registry guarantees remain unchanged.
+
+Approval result details use only fixed outcomes/reasons: `approved/HUMAN_APPROVED`,
+`declined/HUMAN_DECLINED`, `cancelled/NO_RESPONSE`, `cancelled/INVALID_RESPONSE`,
+`cancelled/END_OF_INPUT`, `cancelled/INTERRUPTED`, or `error/REVIEW_FAILED`.
+They retain the same bounded public tool/target context and correlation envelope;
+raw responses, review text, current/proposed state, arguments, exceptions, pending
+entries, and authorization references never enter these audit payloads.
+
+EOF returns without authority. Ordinary review failures attempt a sanitized error
+result and raise `ApprovalError`; interruptions attempt a cancelled result and
+propagate. Pending state closes before these writes and is cleared on every exit.
+A failed required audit is never retried recursively. If cancellation auditing
+also fails during an interruption, the original interruption propagates with the
+audit failure chained. Reentrancy poisons the outer operation; after detection no
+further review callbacks or outcome-audit attempts run. Consequently failures may
+leave an incomplete audit trail, never usable new authority. Host exceptions can
+retain diagnostic causes and must not be exposed as raw agent-facing tracebacks.
+
+The original action ID remains reserved after every outcome. No pending state or
+approval can be replayed, resumed, imported, or reused after failure. Publication
+failure, including partial insertion after a successful issuance audit, uses the
+existing cleanup boundary and cannot reopen approval or reissue the same ID.
+
+Display/input and formatter callbacks are trusted application code, not a security
+sandbox. Formatters may describe only the canonical action; display callbacks must
+faithfully present it, and readers must collect fresh human input rather than
+proposal text, cached responses, or defaults. The service does not authenticate
+humans, verify screens, or sandbox malicious callbacks. Current-state display is
+the fixed resource snapshot captured at service construction: live freshness,
+concurrent changes, and TOCTOU protection are explicitly deferred. No handler or
+resource mutation occurs during this workflow.
 
 ## Planned end-to-end flow
 
@@ -423,9 +495,9 @@ declined, and cancelled. A denial does not produce an execution-started event.
 
 Events share the action ID. Include bounded known tool and resolved target context,
 risk and reason when available, and concise execution outcomes when implemented.
-Milestone 3A follows the identifier-only retention policy above; it does not log
-arguments or claim that a full action can be reconstructed from logs. Future human
-approval must display and bind the exact action held in trusted state. Retaining
+Milestones 3A and 3B follow the identifier-only retention policy above; they do not
+log arguments or claim that a full action can be reconstructed from logs. Human
+approval displays and binds the exact action held in trusted state. Retaining
 any argument or result fields in later audit events requires an explicit safe
 field policy. Avoid raw unbounded input dumps and credentials; validation alone
 does not establish that operational data is safe to retain.
@@ -450,7 +522,7 @@ decisions for the same tool, approval binding, hard-deny precedence,
 forged/reused references, attempted authorization reissuance, mutation after
 approval, and audit failures at the relevant pre- and post-execution stages.
 
-Milestones 2A, 2B, and 3A use standard-library `unittest` for contract, governance,
+Milestones 2A, 2B, 3A, and 3B use standard-library `unittest` for contract, governance,
 and authorization checks. Tests cover structural immutability, correlated outcomes, all demo paths,
 denial precedence, malformed arguments/targets, missing permission, spoofed
 claims, contextual risk, deterministic results, callback failures, and the absence
@@ -467,7 +539,13 @@ identifier bounds and omitted payloads, decision-audit failures on both non-issu
 paths, duplicate audit failures preserving earlier authority, callback interruptions,
 and reentrancy after partial publication. Test writers do not establish durable audit guarantees.
 
-CLI/raw proposal parsing, human approval, executor, tool handlers, and concrete
+Approval tests additionally prove exact action/result binding, canonical display
+against a fixed resource snapshot, DENY bypassing review, strict human response
+handling, closure before result auditing, audit failures, callback interruptions,
+reentrancy, partial-publication cleanup, immutable review data, and rejection of
+review/audit data as authority. The 3A tests run unchanged without approval configured.
+
+CLI/raw proposal parsing, concrete human I/O, executor, tool handlers, and concrete
 audit storage remain deferred. UUID identifiers remain descriptive record data;
 only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose

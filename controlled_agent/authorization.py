@@ -1,4 +1,4 @@
-"""Internal ALLOW-only issuance and single-use consumption, without dispatch.
+"""Trusted issuance, optional human approval, and one-use consumption; no dispatch.
 
 The host owns one sequential service per run. Its configuration and synchronous
 audit writer are trusted; no service or opaque reference belongs in agent data.
@@ -12,6 +12,7 @@ from re import fullmatch
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
+from .approval import ApprovalChange, ApprovalReview, HumanApprovalAdapter
 from .contracts import (
     ActionRequest, AuditEvent, AuditEventType, Authorization, AuthorizationState,
     Decision, GovernanceResult, JSONValue, _freeze_mapping,
@@ -50,6 +51,10 @@ class AuditWriteError(AuthorizationError):
     """The mandatory audit writer failed its synchronous write contract."""
 
 
+class ApprovalError(AuthorizationError):
+    """Trusted review could not complete; the action ID remains terminal."""
+
+
 class _Reference:
     __slots__ = ()
 
@@ -61,6 +66,13 @@ class _Reference:
 class _Entry:
     authorization: Authorization
     consumed: bool = False
+
+
+@dataclass(slots=True)
+class _PendingApproval:
+    action: ActionRequest
+    result: GovernanceResult
+    closed: bool = False
 
 
 class AuthorizationService:
@@ -76,9 +88,17 @@ class AuthorizationService:
         self, *, tools: Mapping[str, ToolRules], permissions: Mapping[str, Set[str]],
         resources: Mapping[str, Mapping[str, JSONValue]],
         audit_write: Callable[[AuditEvent], None],
+        approval_formatter: Callable[[ActionRequest, Mapping[str, JSONValue]], ApprovalChange] | None = None,
+        human_approval: HumanApprovalAdapter | None = None,
     ) -> None:
         if not callable(audit_write):
             raise TypeError("audit_write must be a synchronous audit writer")
+        if (approval_formatter is None) != (human_approval is None):
+            raise TypeError("approval formatter and human adapter must be configured together")
+        if human_approval is not None and (
+            type(human_approval) is not HumanApprovalAdapter or not callable(approval_formatter)
+        ):
+            raise TypeError("approval requires a trusted formatter and HumanApprovalAdapter")
         self._tools = MappingProxyType(dict(tools))
         for name, rules in self._tools.items():
             if not isinstance(rules, ToolRules) or rules.definition.name != name:
@@ -95,6 +115,9 @@ class AuthorizationService:
         if any(not isinstance(context, Mapping) for context in self._resources.values()):
             raise TypeError("resources must contain metadata mappings")
         self._audit_write = audit_write
+        self._approval_formatter = approval_formatter
+        self._human_approval = human_approval
+        self._pending: _PendingApproval | None = None
         self._seen: set[UUID] = set()
         self._records: dict[_Reference, _Entry] = {}
         self._busy = False
@@ -147,11 +170,90 @@ class AuthorizationService:
     def _publish(self, reference: _Reference, authorization: Authorization) -> None:
         self._records[reference] = _Entry(authorization)
 
+    def _approval_event(
+        self, action: ActionRequest, event_type: AuditEventType,
+        *, outcome: str | None = None, reason_code: str | None = None,
+    ) -> AuditEvent:
+        details = {"tool_name": self._audit_tool_name(action),
+                   "resolved_target": _audit_identifier(action.target)}
+        if outcome is not None:
+            details.update(outcome=outcome, reason_code=reason_code)
+        return AuditEvent(action_id=action.action_id, caller=action.caller,
+                          event_type=event_type, details=details)
+
+    def _review_action(self, action: ActionRequest, result: GovernanceResult) -> bool:
+        """One private review attempt; only internal evaluation can reach here.
+
+        False supplies no authority. True is usable only in this issue() call,
+        whose original action and publication rollback boundary remain intact.
+        """
+        if self._human_approval is None:
+            return False
+        pending = _PendingApproval(action, result)
+        try:
+            self._pending = pending
+            self._write(self._approval_event(action, AuditEventType.APPROVAL_REQUESTED))
+            try:
+                # Same immutable resource snapshot used by governance; no re-resolution.
+                change = self._approval_formatter(action, self._resources[action.target])
+                self._check_reentrancy()
+                review = ApprovalReview(action=action, change=change)
+                displayed = self._human_approval.display(review)
+                self._check_reentrancy()
+                if displayed is not None:
+                    raise ApprovalError("Display must return None after presenting the review")
+                response = self._human_approval.read_response()
+                self._check_reentrancy()
+            except BaseException as error:
+                pending.closed = True
+                self._pending = None
+                # A poisoned operation invokes no further external callbacks.
+                self._check_reentrancy()
+                if isinstance(error, EOFError):
+                    self._write(self._approval_event(
+                        action, AuditEventType.APPROVAL_RESULT,
+                        outcome="cancelled", reason_code="END_OF_INPUT",
+                    ))
+                    return False
+                interrupted = not isinstance(error, Exception)
+                try:
+                    self._write(self._approval_event(
+                        action, AuditEventType.APPROVAL_RESULT,
+                        outcome="cancelled" if interrupted else "error",
+                        reason_code="INTERRUPTED" if interrupted else "REVIEW_FAILED",
+                    ))
+                except BaseException as audit_error:
+                    if interrupted:
+                        raise error from audit_error
+                    raise
+                if interrupted:
+                    raise
+                raise ApprovalError("Human review could not complete") from error
+
+            # Close before result auditing, including an affirmative result.
+            pending.closed = True
+            self._pending = None
+            if type(response) is str and response.strip() == "approve":
+                outcome, reason = "approved", "HUMAN_APPROVED"
+            elif type(response) is str and response.strip() == "decline":
+                outcome, reason = "declined", "HUMAN_DECLINED"
+            elif response is None or (type(response) is str and not response.strip()):
+                outcome, reason = "cancelled", "NO_RESPONSE"
+            else:
+                outcome, reason = "cancelled", "INVALID_RESPONSE"
+            self._write(self._approval_event(action, AuditEventType.APPROVAL_RESULT,
+                                             outcome=outcome, reason_code=reason))
+            return outcome == "approved"
+        finally:
+            pending.closed = True
+            self._pending = None
+
     def issue(self, request: ActionRequest) -> tuple[GovernanceResult, object | None]:
         """Evaluate internally and return (reportable result, host-only reference).
 
-        DENY and REQUIRE_APPROVAL return no reference. All admitted IDs are
-        terminal, even on interruption or failure after the issuance audit.
+        DENY never issues. REQUIRE_APPROVAL can issue only after configured human
+        review; its original decision stays REQUIRE_APPROVAL in the return tuple.
+        All admitted IDs are terminal, including review/issuance failures.
         Raw proposal parsing/ID assignment belong to the later controller.
         """
         reference = None
@@ -182,10 +284,12 @@ class AuthorizationService:
                 )
                 self._check_reentrancy()
                 self._write(self._decision_event(request, result, action, resolved_target))
-                if result.decision is not Decision.ALLOW:
+                if result.decision is not Decision.ALLOW and result.decision is not Decision.REQUIRE_APPROVAL:
                     return result, None
                 if action is None:
                     raise AuthorizationError("Evaluation did not retain a validated action")
+                if result.decision is Decision.REQUIRE_APPROVAL and not self._review_action(action, result):
+                    return result, None
 
                 authorization = Authorization(
                     authorization_id=uuid4(), action=action, state=AuthorizationState.USABLE,
