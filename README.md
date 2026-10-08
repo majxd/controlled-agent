@@ -12,10 +12,12 @@ when required.
 
 ## Status
 
-Milestone 2A: core data contracts and contract tests are implemented for review.
-The contracts use immutable snapshots and structural validation. Governance,
-approval, execution, tools, and audit storage are not implemented; there is no
-runnable CLI or LLM integration yet. No third-party dependencies are required.
+Milestone 2A contracts are approved and committed. Milestone 2B deterministic
+governance and its tests are implemented for review. Governance evaluates tool
+existence, arguments, target context, permissions, policy, and contextual risk.
+It returns `GovernanceResult` data without executing tools or issuing authority.
+Approval, execution, tool handlers, audit storage, CLI, and LLM integration remain
+deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. Future execution must resolve an internal reference against
@@ -25,30 +27,46 @@ The planned MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
 and local JSONL auditing. Model/provider integration is deferred until the
 deterministic execution boundary works.
 
-Run the contract tests from the repository root with Python 3.12+:
+Run all tests from the repository root with Python 3.12+:
 
 ```sh
 python3.12 -B -m unittest discover -s tests -v
 ```
 
-The initial package is `controlled_agent/`; contracts live in `contracts.py`
-and tests in `tests/test_contracts.py`. `pyproject.toml` records project metadata
-and the Python requirement; no installation or build setup is required for
-these tests. Passing contract tests does not establish a working control gate.
+The `controlled_agent/` package separates `contracts.py`, the domain-neutral
+`governance.py`, and fake work-order rules/configuration in `demo.py`. Tests live
+in `tests/`. `pyproject.toml` records project metadata and the Python requirement;
+no installation or build setup is required. Passing these tests does not establish
+the deferred execution and audit boundary.
+
+The evaluation entry points are `governance.evaluate_action` and
+`demo.evaluate_demo`. They accept an `ActionRequest` whose ID and caller were
+supplied by trusted application code. Raw proposal dictionaries are rejected;
+argument claims cannot supply identity, permission, approval, or policy results.
+Targets are resolved from tool arguments against trusted resource metadata;
+neither a conflicting `ActionRequest.target` nor claimed protection flags can
+create or replace that context. Unknown targets fail closed without an invented
+risk classification.
 
 ## MVP demo
 
-Two bounded tools will operate on fake local work orders for `demo_operator`:
+Current evaluation results for `demo_operator` with permission and valid arguments:
 
 | Path | Risk | Decision / behavior |
 | --- | --- | --- |
-| `get_work_order` on an allowed order, with valid arguments and permission | LOW | `ALLOW`; execute the read |
-| `update_work_order_status` on editable `WO-1001`, with valid arguments and permission | MEDIUM | `REQUIRE_APPROVAL`; show the exact order and new status |
+| `get_work_order` on `WO-1001` or `WO-9001` | LOW | `ALLOW` |
+| `update_work_order_status` on editable `WO-1001` | MEDIUM | `REQUIRE_APPROVAL` |
 | Any mutation of protected or critical `WO-9001`, including closure through the update tool | HIGH | `DENY`; no approval override or tool invocation |
 
 The same tool can receive different decisions based on target, arguments,
 permissions, and policy. Risk never grants permission; approval cannot override
-`DENY`. Approval and authorization expire on restart; local JSONL audit logs persist.
+`DENY`. Protected mutations stay HIGH / DENY even with invalid status, missing
+permission, or claimed approval. Other unexpected argument fields are rejected.
+Statuses are `open`, `in_progress`, and `closed`; even a same-status editable
+update requires approval. No work-order state changes during evaluation.
+
+Future approval and authorization state will expire on restart; future local
+JSONL audit logs will persist without conveying execution rights.
 
 Industrial operations are the demonstration layer; the governance core remains
 domain-neutral. No real industrial systems or cloud services are connected.

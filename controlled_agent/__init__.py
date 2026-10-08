@@ -8,6 +8,7 @@ from .contracts import (
     AuthorizationState,
     CallerContext,
     Decision,
+    GovernanceResult,
     Risk,
     ToolDefinition,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "AuthorizationState",
     "CallerContext",
     "Decision",
+    "GovernanceResult",
     "Risk",
     "ToolDefinition",
 ]

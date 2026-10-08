@@ -14,6 +14,7 @@ from controlled_agent import (
     AuthorizationState,
     CallerContext,
     Decision,
+    GovernanceResult,
     Risk,
     ToolDefinition,
 )
@@ -34,6 +35,36 @@ class ContractTests(unittest.TestCase):
         }
         fields.update(changes)
         return ActionRequest(**fields)
+
+    def test_governance_result_is_correlated_typed_and_immutable(self):
+        result = GovernanceResult(
+            action_id=self.action_id, decision=Decision.DENY,
+            reason_code="INVALID_ARGUMENTS", explanation="Arguments are invalid.",
+        )
+        self.assertEqual(result.action_id, self.action_id)
+        self.assertIsNone(result.risk)
+        with self.assertRaises(FrozenInstanceError):
+            result.decision = Decision.ALLOW
+        fields = {
+            "action_id": self.action_id, "decision": Decision.ALLOW, "risk": Risk.LOW,
+            "reason_code": "READ_ALLOWED", "explanation": "Read is allowed.",
+        }
+        for key, value in (
+            ("action_id", str(self.action_id)), ("decision", "ALLOW"),
+            ("risk", "LOW"), ("reason_code", "invalid code"),
+            ("reason_code", ""), ("explanation", " "),
+        ):
+            with self.subTest(field=key, value=value):
+                with self.assertRaises((TypeError, ValueError)):
+                    GovernanceResult(**(fields | {key: value}))
+        for key, value in (
+            ("approved", True), ("approval_evidence", {"human": True}),
+            ("authorization_id", uuid4()), ("execution_token", "fake-token"),
+            ("credentials", {"token": "fake-token"}),
+        ):
+            with self.subTest(forbidden_field=key):
+                with self.assertRaises(TypeError):
+                    GovernanceResult(**(fields | {key: value}))
 
     def test_decision_risk_and_state_have_only_the_documented_values(self):
         expected = {

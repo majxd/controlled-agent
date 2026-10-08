@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestone 2A core contracts and their tests are implemented for review. The control system described here is not yet implemented; model/provider selection remains deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestone 2A contracts are approved and committed. Milestone 2B deterministic governance and demo configuration are implemented for review. Approval, authorization state, execution, audit storage, CLI, and model/provider integration remain deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -22,7 +22,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 ## 3. Use Python 3.12+ and a single local CLI application
 
-**Decision:** The MVP runs locally in one Python 3.12+ process with explicit module responsibilities and terminal interaction. Milestone 2A uses the Python standard library; no framework or third-party dependency has been selected.
+**Decision:** The MVP runs locally in one Python 3.12+ process with explicit module responsibilities and terminal interaction. Milestones 2A and 2B use the Python standard library; no framework or third-party dependency has been selected.
 
 **Reasoning:** This keeps the control boundary visible without adding deployment, networking, or distributed state management. The demonstration needs only sequential local actions and in-memory approval/authorization state.
 
@@ -123,3 +123,45 @@ automatically a registered execution reference, and construction does not check
 identifier uniqueness. These are future trusted-state responsibilities. Audit
 details enforce structure and immutability only; sensitive payload/result
 retention and redaction remain the responsibility of later event producers.
+
+## 14. Evaluate deterministically before implementing execution authority
+
+**Decision:** Milestone 2B adds `GovernanceResult`, the domain-neutral
+`evaluate_action` function, and separate fake work-order configuration in
+`demo.py`. Internal `ToolRules` holds descriptive metadata and pure resolver,
+validator, and policy functions. It contains no executable tool handler and is
+not agent-facing metadata. Permissions and resource context are host-supplied
+configuration; proposal fields never supply them.
+
+**Reasoning:** Explicit domain functions are sufficient for two bounded tools.
+No generic schema interpreter, policy language, authentication layer, or registry
+service is needed. The core composes checks and enforces denial precedence;
+domain rules determine contextual risk and proposed outcomes.
+
+**Precedence:** Resolve a known target from arguments, then evaluate policy before
+accepting arguments or permission. An identifiable protected/critical mutation
+retains HIGH / DENY despite other errors. For other outcomes, target mismatch,
+invalid arguments, missing permission, or unresolved risk denies the action.
+Policy failures and ordinary callback exceptions fail closed. All DENY results
+are terminal for their evaluation; later approval cannot override them.
+
+**Demo conventions:** Adopt exact required arguments and no extra fields; statuses
+are `open`, `in_progress`, and `closed`. Both sample orders start `open`, and an
+editable same-status update still requires approval. Only `WO-1001` and `WO-9001`
+resolve. Immutable metadata and permission sets remain fixed during evaluation.
+
+**Limits:** The input must be a host-assembled `ActionRequest`. Raw dictionaries
+raise `TypeError`; malformed record contents return a correlated denial. A
+separate resolved snapshot leaves the original untouched. Results are data,
+not authority. Pure callbacks are trusted application code, not sandboxed code.
+No approval flow, authorization issuance/consumption, executor, tool handlers,
+CLI, audit sink, or model integration is added. Full submission auditing and
+execution-boundary tests remain for their respective milestones.
+
+**Focused governance review:** Confirmed that target resolution must succeed and
+trusted resource metadata must establish protection before the HIGH hard-deny
+path applies. A supplied target is not a fallback; argument claims cannot create
+or weaken trusted context. Added adversarial context tests, permission checks
+across every risk and favorable policy outcome, rejection of authority fields
+on results, and file-I/O/human-input guards. No governance behavior or architecture
+changed in this review; approval and execution enforcement remain deferred.

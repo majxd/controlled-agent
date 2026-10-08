@@ -3,7 +3,7 @@
 Construction checks representation, not permission or provenance. A future
 controller must supply caller context and an action ID generated before parsing
 the proposal; it must never deserialize model output directly into these types.
-Tool-schema validation, target resolution, governance, and execution are absent.
+Constructors do not evaluate tool schemas, policy, or execution permission.
 """
 
 from collections.abc import Mapping
@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from math import isfinite
+from re import fullmatch
 from types import MappingProxyType
 from typing import cast
 from uuid import UUID
@@ -133,8 +134,8 @@ class ActionRequest:
 
     The application generates action_id before parsing and supplies caller from
     trusted context; constructor type checks cannot establish their provenance.
-    For an action with a resource, the future resolver derives target from
-    arguments.
+    Governance derives a resource target from arguments and checks any supplied
+    target for consistency.
     This constructor does not resolve targets, validate tool schemas, or mark
     an action as governed. The same ID can correlate a prior submission event.
     """
@@ -161,7 +162,7 @@ class ToolDefinition:
     """Agent-facing description and argument-schema data, with no handler.
 
     The schema is descriptive JSON-like metadata here. Its interpretation and
-    enforcement belong to later governance, not contract construction. Risk is
+    enforcement belong to governance, not contract construction. Risk is
     contextual and therefore is not a fixed property of a tool definition.
     Descriptions and schemas must contain public metadata only, without secrets
     or internal execution references. This contract does not detect or redact
@@ -180,6 +181,31 @@ class ToolDefinition:
             "argument_schema",
             _freeze_mapping(self.argument_schema, "argument_schema"),
         )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GovernanceResult:
+    """A correlated evaluation outcome, never approval or execution authority.
+
+    DENY is terminal for this evaluation. Risk can be absent when classification
+    is impossible. Later approval handling must never turn DENY into permission.
+    """
+
+    action_id: UUID
+    decision: Decision
+    reason_code: str
+    explanation: str
+    risk: Risk | None = None
+
+    def __post_init__(self) -> None:
+        _require_type(self.action_id, UUID, "action_id")
+        _require_type(self.decision, Decision, "decision")
+        if self.risk is not None:
+            _require_type(self.risk, Risk, "risk")
+        _require_text(self.reason_code, "reason_code")
+        if fullmatch(r"[A-Z][A-Z0-9_]*", self.reason_code) is None:
+            raise ValueError("reason_code must be an uppercase machine-readable code")
+        _require_text(self.explanation, "explanation")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

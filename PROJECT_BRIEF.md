@@ -111,9 +111,14 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestone 2A: core data contracts and contract tests are implemented for review,
-using the Python standard library. This establishes immutable data snapshots
-and structural checks, not the governance or execution boundary. No runnable
-CLI, policy evaluator, permission checks, approval workflow, authorization
-issuance/consumption, executor, tool handlers, audit sink, sample data files,
-third-party dependencies, or model integration have been added.
+Milestone 2A contracts are approved and committed. Milestone 2B adds deterministic
+governance for host-assembled requests, permission checks, target resolution,
+argument validation, contextual policy/risk, and a correlated governance result.
+The fake work-order metadata and pure rules are separate from the domain-neutral
+core. This implementation and its tests are ready for review, using only the
+Python standard library.
+
+Evaluation returns a decision without executing anything or granting authority.
+Raw proposal parsing, CLI, approval workflow, authorization issuance/consumption,
+executor, tool handlers, audit storage, and model integration remain deferred.
+The full execution and audit boundary is not yet implemented.

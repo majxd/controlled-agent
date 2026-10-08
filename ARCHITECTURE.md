@@ -5,8 +5,10 @@
 The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestone 2A implements only core data contracts and their tests,
-under review. The control components and provider integration are not implemented.
+per component. Milestone 2A contracts are approved and committed. Milestone 2B
+implements deterministic governance and separate demo policy/configuration,
+under review. Approval, authorization issuance/consumption, execution, tool
+handlers, audit storage, CLI, and provider integration remain deferred.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -14,7 +16,7 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
-## Components
+## Planned components and boundaries
 
 | Component | Responsibility and boundary |
 | --- | --- |
@@ -59,8 +61,8 @@ must be written successfully before the handler can run.
 ## Minimal contracts
 
 The table describes the intended control system. Milestone 2A implements the
-record and enum subset described below; the remaining responsibilities are
-deferred.
+base records and enums; Milestone 2B adds the governance result and evaluation
+described below. Approval, issuance, dispatch, and audit storage remain deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -70,7 +72,7 @@ deferred.
 | `Permission` | A configured allowlist linking the trusted caller to tool capabilities. No match means deny. |
 | `Policy` | Deterministic application rules that inspect the validated request and trusted context; hard-deny rules take precedence over approval. |
 | `Risk` | A deterministic classification of the action and trusted target context, used by policy and recorded with the decision. It is not fixed per tool and never grants permission. |
-| Governance result | Action ID, a `Decision` outcome (`ALLOW` / `DENY` / `REQUIRE_APPROVAL`), risk when classification is possible, and a stable reason code plus readable explanation. This richer result is deferred to Milestone 2B; a decision is not an execution credential. |
+| `GovernanceResult` | Action ID, a `Decision` outcome (`ALLOW` / `DENY` / `REQUIRE_APPROVAL`), risk when classification is possible, and a stable uppercase reason code plus readable explanation. Implemented in Milestone 2B; a decision is not an execution credential. |
 | Execution authorization | Governance-owned record referring to the exact validated request, with usable/consumed state. Pending or denied requests provide no usable execution authorization. The executor receives only an internal opaque reference. |
 | `AuditEvent` | Event type, timestamp, action ID, trusted caller when known, and relevant decision, approval, or execution details. |
 
@@ -95,7 +97,7 @@ are rejected because they can retain mutable attributes or live references.
 | `CallerContext` | Required `caller_id` string. No permission list or authentication behavior; the future application supplies trusted context. |
 | `ActionRequest` | Required UUID `action_id`, `tool_name`, argument mapping, and `CallerContext`; optional target identifier for later trusted resolution. Construction checks structure, not whether the tool, arguments, caller, or target are allowed. |
 | `Decision` | Exactly `ALLOW`, `DENY`, and `REQUIRE_APPROVAL`. It is the outcome enum, not a governance result or authority. |
-| `Risk` | `LOW`, `MEDIUM`, and `HIGH`, with no numeric ordering or automatic authorization meaning. Classification is deferred. |
+| `Risk` | `LOW`, `MEDIUM`, and `HIGH`, with no numeric ordering or automatic authorization meaning. Milestone 2B supplies classification through domain policy functions. |
 | `ToolDefinition` | Name, description, and immutable argument-schema metadata. No handler, fixed risk, schema evaluator, or registry behavior. |
 | `Authorization` | UUID authorization identifier, complete immutable `ActionRequest`, and `AuthorizationState` (`USABLE` or `CONSUMED`). This is a data record only; constructing it does not grant execution rights. |
 | `AuditEvent` | UUID action ID, `AuditEventType`, timezone-aware timestamp defaulting to UTC, optional caller, and immutable details. The nine event types below are represented; no logger or event-payload policy is implemented. |
@@ -104,8 +106,9 @@ Action IDs are supplied by trusted application code before parsing, so malformed
 input can be correlated without constructing an `ActionRequest`. The contracts
 check UUID representation but cannot prove its provenance; ID generation and
 submission handling are deferred. Likewise, the optional target is intended to
-be populated by a later trusted resolver, not to create independent authority
-for a model-supplied target. Authorization must eventually bind the semantically
+be derived by trusted resolution, not to create independent authority for a
+model-supplied target. Milestone 2B checks any supplied target against the target
+derived from arguments. Authorization must eventually bind the semantically
 validated, resolved request, not merely any structurally valid record.
 
 There is no authorization issuance, consumption, state-transition method, or
@@ -133,7 +136,63 @@ descriptions, schema text, defaults, and examples. Structural checks reject live
 objects but cannot detect secrets embedded in otherwise valid text. No secret
 scanner, reference resolver, or payload-storage policy is part of these contracts.
 
-## End-to-end flow
+### Milestone 2B governance implementation
+
+`governance.evaluate_action` is a domain-neutral evaluation function accepting a
+host-assembled `ActionRequest` and trusted tool rules, permission sets, and resource
+metadata. Caller identity and the action ID are trusted application inputs; this
+API does not authenticate them or deserialize model output. Non-`ActionRequest`
+input raises `TypeError` without an outcome or authority. Semantically malformed
+records return `DENY`. Raw parsing, submission IDs, and audit integration remain
+controller work for a later milestone.
+
+Internal `ToolRules` combines public `ToolDefinition` data with three trusted pure
+functions: argument validation, target resolution, and contextual policy
+evaluation. It contains no tool handler and must not be exposed as agent metadata.
+The descriptive schemas are not interpreted by a general JSON Schema engine;
+small explicit demo validators enforce their documented required fields, string
+types, status values, and rejection of extra arguments.
+
+Evaluation looks up the tool and resolves a known target from arguments, then
+evaluates policy using trusted resource metadata and a separate request snapshot
+with that target. Policy must safely handle incomplete arguments. A policy DENY
+returns immediately, so an identifiable protected mutation stays HIGH / DENY even
+with invalid status, mismatched supplied target, or missing permission. Otherwise,
+a target mismatch, invalid arguments, or missing permission denies the action in
+that order. A favorable policy outcome also requires a known risk. Risk never
+bypasses any check. The original request and demo metadata remain unchanged.
+
+The supplied `ActionRequest.target` is never a fallback when argument resolution
+fails. Neither that field nor argument claims such as `target`, `protected`,
+`risk`, `approved`, or `decision` manufacture resource metadata. The HIGH-risk
+protected denial requires both a safely resolved target and trusted metadata
+identifying protection or criticality. A protected-looking ID without that
+metadata fails closed without inventing a HIGH classification. Callback names or
+code strings in arguments are inert extra fields, never dynamically resolved.
+
+Policy returns only a proposed `GovernanceResult`; the core checks its action ID
+and applies the remaining gates. Missing/invalid policy results fail closed.
+Ordinary configuration/callback exceptions become `GOVERNANCE_ERROR` without
+exposing exception text; cancellation interrupts evaluation and yields no rights.
+Configuration and callbacks are trusted, fixed during evaluation, and must be
+pure. This is not containment for arbitrary malicious Python callbacks.
+
+Core reason codes are `UNKNOWN_TOOL`, `INVALID_TARGET`, `TARGET_MISMATCH`,
+`INVALID_ARGUMENTS`, `PERMISSION_DENIED`, `POLICY_UNRESOLVED`, and
+`GOVERNANCE_ERROR`. Demo policy codes are `READ_ALLOWED`,
+`UPDATE_REQUIRES_APPROVAL`, `PROTECTED_TARGET`, and `TARGET_NOT_EDITABLE`.
+Unknown tools or unresolved targets have no risk; resolvable validation/permission
+denials retain the contextual risk when available. Codes, rather than explanation
+text, are the machine-readable interface.
+
+`demo.py` supplies two immutable fake resource records, permission sets for
+`demo_operator`, descriptive tool schemas, and pure work-order policy functions.
+Missing protection/editability metadata cannot permit an update; either a true
+protected flag or a true critical flag independently hard-denies it. `DENY` has
+no approval override API. `ALLOW` and `REQUIRE_APPROVAL` are evaluation data only;
+no pending approval, authorization, tool invocation, or audit write occurs.
+
+## Planned end-to-end flow
 
 1. The controller assigns an ID and trusted caller to every submission and
    writes a bounded, safe submission record before validation. An audit failure
@@ -219,14 +278,14 @@ Confirmed demo setup and rules:
 - Approval and authorization stay in memory and expire on restart. Local JSONL
   audit logs persist; they cannot be used to restore execution permission.
 
-Remaining sample conventions for review:
+Sample conventions (validation and metadata adopted in Milestone 2B):
 
 - Both work orders start `open`.
 - The update schema accepts `work_order_id` and `new_status`; the read schema
   accepts only `work_order_id`. Status values are `open`, `in_progress`, and
   `closed`. No arbitrary field updates or user-supplied resource paths exist.
-- Initially, work orders live in local in-memory fixtures and reset on restart.
-  Writes change their status within a run; only the audit log is persistent.
+- Milestone 2B work orders are immutable in-memory metadata. Future handlers
+  will change fixture status within a run; only the future audit log persists.
 - A valid same-status update to an editable fixture with permission also
   requires approval. No industrial transition workflow is modeled in this MVP.
 - Policy configuration and protection metadata are fixed during a run. Human
@@ -285,13 +344,17 @@ decisions for the same tool, approval binding, hard-deny precedence,
 forged/reused references, attempted authorization reissuance, mutation after
 approval, and audit failures at the relevant pre- and post-execution stages.
 
-Milestone 2A uses standard-library `unittest` for contract checks. These checks
-cover record structure and immutability, not the unimplemented control flow.
+Milestones 2A and 2B use standard-library `unittest` for contract and governance
+checks. Tests cover structural immutability, correlated outcomes, all demo paths,
+denial precedence, malformed arguments/targets, missing permission, spoofed
+claims, contextual risk, deterministic results, callback failures, and the absence
+of handler dispatch or issuance. A document-domain policy exercises the generic
+core independently of work-order rules. The full execution boundary is deferred.
 Run `python3.12 -B -m unittest discover -s tests -v` from the repository root.
 
-CLI parsing, semantic argument validation, permission/policy evaluation, the
-richer governance result, and trusted authorization-state management remain
-deferred. UUID identifiers describe the record shape without implementing an
+CLI/raw proposal parsing, approval, trusted authorization-state management,
+execution, tool handlers, and audit storage remain deferred. UUID identifiers
+describe the record shape without implementing an
 execution credential. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose
 actions but may not auto-dispatch tools.
