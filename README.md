@@ -12,12 +12,29 @@ when required.
 
 ## Status
 
-Milestone 1: foundation documentation only. Implementation has not started.
-There is no runnable application, dependency setup, or LLM integration yet.
+Milestone 2A: core data contracts and contract tests are implemented for review.
+The contracts use immutable snapshots and structural validation. Governance,
+approval, execution, tools, and audit storage are not implemented; there is no
+runnable CLI or LLM integration yet. No third-party dependencies are required.
+
+Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
+execution rights. Future execution must resolve an internal reference against
+governance-owned issuance state; it must never trust a caller-created record.
 
 The planned MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
 and local JSONL auditing. Model/provider integration is deferred until the
 deterministic execution boundary works.
+
+Run the contract tests from the repository root with Python 3.12+:
+
+```sh
+python3.12 -B -m unittest discover -s tests -v
+```
+
+The initial package is `controlled_agent/`; contracts live in `contracts.py`
+and tests in `tests/test_contracts.py`. `pyproject.toml` records project metadata
+and the Python requirement; no installation or build setup is required for
+these tests. Passing contract tests does not establish a working control gate.
 
 ## MVP demo
 

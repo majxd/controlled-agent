@@ -88,7 +88,7 @@ language, vector database, persistent agent memory, or multi-agent system.
 No unrestricted shell or filesystem tools, autonomous tool dispatch by an SDK,
 LLM-based governance decisions, parallel execution, automatic retries, durable
 approval recovery, or exactly-once execution guarantees. Model/provider
-integration and dependencies are not part of Milestone 1.
+integration and third-party dependencies remain outside the current milestone.
 
 ## Security boundary and limitations
 
@@ -111,5 +111,9 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestone 1: project-foundation documentation only. Application implementation,
-dependencies, sample data files, and model integration have not been added.
+Milestone 2A: core data contracts and contract tests are implemented for review,
+using the Python standard library. This establishes immutable data snapshots
+and structural checks, not the governance or execution boundary. No runnable
+CLI, policy evaluator, permission checks, approval workflow, authorization
+issuance/consumption, executor, tool handlers, audit sink, sample data files,
+third-party dependencies, or model integration have been added.

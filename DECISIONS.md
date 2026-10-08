@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. These are design decisions, not claims that controls have been implemented. Application implementation and model/provider selection have not started.
+This records the agreed direction for Controlled Agent's first MVP. Milestone 2A core contracts and their tests are implemented for review. The control system described here is not yet implemented; model/provider selection remains deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -22,7 +22,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 ## 3. Use Python 3.12+ and a single local CLI application
 
-**Decision:** The MVP runs locally in one Python 3.12+ process with explicit module responsibilities and terminal interaction. No framework or dependency has been selected.
+**Decision:** The MVP runs locally in one Python 3.12+ process with explicit module responsibilities and terminal interaction. Milestone 2A uses the Python standard library; no framework or third-party dependency has been selected.
 
 **Reasoning:** This keeps the control boundary visible without adding deployment, networking, or distributed state management. The demonstration needs only sequential local actions and in-memory approval/authorization state.
 
@@ -34,7 +34,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 **Reasoning:** A caller-supplied `approved=true` flag, a mutable action, or an authorization reusable for another target would defeat the control layer. Altering the action requires another governance decision.
 
-**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. The exact internal representation and normalization mechanics remain implementation details to review; this decision does not require cryptographic tokens or a separate service.
+**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. Milestone 2A represents authorization data with a UUID, a complete immutable action, and usable/consumed state. Trusted issuance, consumption, reference resolution, and semantic normalization remain deferred; constructing this record grants no authority. This decision does not require cryptographic tokens or a separate service.
 
 ## 5. Require explicit human approval for the exact sensitive action
 
@@ -90,7 +90,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 **Reasoning:** Rebuilding commodity model infrastructure is not the learning objective. Permissions, policies, execution boundaries, and observability are.
 
-**Constraint:** A future integration must leave tool invocation under the application's authorized executor. SDK or hosted tool execution that bypasses governance, internal authorization, or the executor is excluded. No provider, SDK, model, credentials, or dependency is selected in Milestone 1.
+**Constraint:** A future integration must leave tool invocation under the application's authorized executor. SDK or hosted tool execution that bypasses governance, internal authorization, or the executor is excluded. No provider, SDK, model, credentials, or third-party dependency is selected in Milestone 2A.
 
 ## 12. Keep the first MVP intentionally small
 
@@ -99,3 +99,27 @@ The user-approved requirements take precedence over implementation convenience. 
 **Reasoning:** These additions would create failure modes and operational work unrelated to proving the initial control boundary. Bounded local tools and short, deterministic flows are sufficient for the three required paths.
 
 **Consequence:** Scope expansion and meaningful architectural changes require explicit review. Documentation and focused tests accompany implementation milestones; infrastructure is not introduced without explicit approval.
+
+## 13. Implement immutable contracts before control behavior
+
+**Decision:** Milestone 2A adds a flat `controlled_agent/` package, a `contracts.py` module, standard-library `unittest` tests, and minimal project metadata declaring Python 3.12+ with no dependencies. There is no build-system configuration, package installation requirement, or runnable CLI. Contracts use frozen, slotted, keyword-only dataclasses and string enums. Nested JSON-compatible payload mappings are copied into read-only mapping proxies and lists into tuples.
+
+**Reasoning:** Immutable snapshots prevent later edits to source containers from changing the recorded action, schema, or event. Structural checks make the contracts usable without prematurely implementing permission, policy, schema-evaluation, execution, or logging behavior.
+
+**Contract review refinement:** Text metadata accepts plain strings only; string subclasses can carry mutable attributes or executable references despite having an immutable string value. Agent-facing descriptions and schemas must contain public metadata, without secrets or internal execution references. The contract does not scan or redact embedded text.
+
+**Contract choices:** `CallerContext` contains only the caller identifier. `ActionRequest` carries a host-supplied UUID, tool name, arguments, caller, and optional target for later trusted resolution. `Decision` is only the three-outcome enum; a result containing risk and reason metadata is deferred to Milestone 2B. `Risk` has `LOW`, `MEDIUM`, and `HIGH` labels without numeric ordering. `ToolDefinition` contains descriptive metadata and an argument schema, not a handler or fixed risk. `AuditEvent` provides the documented event vocabulary, action correlation, an aware timestamp defaulting to UTC, optional caller, and details, without a sink or event-specific policy validation.
+
+**Limits:** Constructing a structurally valid action does not mean governance has semantically validated it. UUID and caller checks do not establish provenance. Constructing an `Authorization`, even with `USABLE` state, does not establish trusted issuance or execution rights; those depend on later governance-owned state. Contract tests do not demonstrate the control boundary, and the remaining control components require subsequent authorization to implement.
+
+The authorization identifier and state describe an internal record; neither is
+proof of issuance. Future executor code must retrieve the governance-owned record
+through an internal reference, never accept a supplied `Authorization` instance
+as sufficient authority. No issuance or consumption behavior is added by this review.
+
+**Focused pre-commit review:** Retain the record and state names, with explicit
+documentation that `USABLE` on a supplied record is unverified, its UUID is not
+automatically a registered execution reference, and construction does not check
+identifier uniqueness. These are future trusted-state responsibilities. Audit
+details enforce structure and immutability only; sensitive payload/result
+retention and redaction remain the responsibility of later event producers.

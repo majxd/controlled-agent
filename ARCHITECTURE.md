@@ -2,10 +2,11 @@
 
 ## Scope and trust model
 
-One Python 3.12+ process hosts a CLI, a scripted proposal producer, deterministic
-governance, an executor, bounded demo tools, and a JSONL audit sink. These are
-logical responsibilities; this document does not require one package or class
-per component. There is no provider SDK or application implementation yet.
+The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
+deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
+These are logical responsibilities; this document does not require one package or class
+per component. Milestone 2A implements only core data contracts and their tests,
+under review. The control components and provider integration are not implemented.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -57,18 +58,19 @@ must be written successfully before the handler can run.
 
 ## Minimal contracts
 
-These are conceptual data contracts, not an implementation or a serialization
-library choice.
+The table describes the intended control system. Milestone 2A implements the
+record and enum subset described below; the remaining responsibilities are
+deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
 | Proposal | Untrusted tool name and arguments. Unknown fields, including approval or permission claims, do not confer authority. |
 | Submission envelope | Host-generated action ID and trusted caller context, assigned before parsing or validation. Invalid input still has an ID. |
-| `ActionRequest` | Validated tool identifier, canonical arguments, resolved target identifier, action ID, and trusted caller. Stored as an immutable snapshot; the target is derived from validated arguments, not independently supplied. |
+| `ActionRequest` | After governance: validated tool identifier, canonical arguments, resolved target identifier, action ID, and trusted caller. Stored as an immutable snapshot; the target is derived from validated arguments, not independently supplied. Construction alone does not establish this validation. |
 | `Permission` | A configured allowlist linking the trusted caller to tool capabilities. No match means deny. |
 | `Policy` | Deterministic application rules that inspect the validated request and trusted context; hard-deny rules take precedence over approval. |
 | `Risk` | A deterministic classification of the action and trusted target context, used by policy and recorded with the decision. It is not fixed per tool and never grants permission. |
-| `Decision` | Action ID, `ALLOW` / `DENY` / `REQUIRE_APPROVAL`, risk when classification is possible, and a stable reason code plus readable explanation. A decision is not an execution credential. |
+| Governance result | Action ID, a `Decision` outcome (`ALLOW` / `DENY` / `REQUIRE_APPROVAL`), risk when classification is possible, and a stable reason code plus readable explanation. This richer result is deferred to Milestone 2B; a decision is not an execution credential. |
 | Execution authorization | Governance-owned record referring to the exact validated request, with usable/consumed state. Pending or denied requests provide no usable execution authorization. The executor receives only an internal opaque reference. |
 | `AuditEvent` | Event type, timestamp, action ID, trusted caller when known, and relevant decision, approval, or execution details. |
 
@@ -76,6 +78,60 @@ Malformed or unresolved submissions receive a `DENY` decision with a validation
 reason. They do not require a fabricated validated request or risk value. If the
 tool and target can be safely resolved as a protected or critical mutation, it
 remains HIGH risk and denied even when arguments or permissions also fail.
+
+### Milestone 2A contract implementation
+
+The flat `controlled_agent/` package contains `__init__.py` and `contracts.py`.
+Contracts use frozen, slotted, keyword-only standard-library dataclasses and
+string enums. Mapping payloads are recursively copied into read-only mapping
+proxies; lists become tuples. This detaches each record from mutable input and
+preserves an immutable snapshot of JSON-compatible data. It does not perform
+domain normalization or semantic tool-argument validation. Caller identifiers,
+tool names, targets, and descriptions must be plain strings; string subclasses
+are rejected because they can retain mutable attributes or live references.
+
+| Implemented contract | Contents and limits |
+| --- | --- |
+| `CallerContext` | Required `caller_id` string. No permission list or authentication behavior; the future application supplies trusted context. |
+| `ActionRequest` | Required UUID `action_id`, `tool_name`, argument mapping, and `CallerContext`; optional target identifier for later trusted resolution. Construction checks structure, not whether the tool, arguments, caller, or target are allowed. |
+| `Decision` | Exactly `ALLOW`, `DENY`, and `REQUIRE_APPROVAL`. It is the outcome enum, not a governance result or authority. |
+| `Risk` | `LOW`, `MEDIUM`, and `HIGH`, with no numeric ordering or automatic authorization meaning. Classification is deferred. |
+| `ToolDefinition` | Name, description, and immutable argument-schema metadata. No handler, fixed risk, schema evaluator, or registry behavior. |
+| `Authorization` | UUID authorization identifier, complete immutable `ActionRequest`, and `AuthorizationState` (`USABLE` or `CONSUMED`). This is a data record only; constructing it does not grant execution rights. |
+| `AuditEvent` | UUID action ID, `AuditEventType`, timezone-aware timestamp defaulting to UTC, optional caller, and immutable details. The nine event types below are represented; no logger or event-payload policy is implemented. |
+
+Action IDs are supplied by trusted application code before parsing, so malformed
+input can be correlated without constructing an `ActionRequest`. The contracts
+check UUID representation but cannot prove its provenance; ID generation and
+submission handling are deferred. Likewise, the optional target is intended to
+be populated by a later trusted resolver, not to create independent authority
+for a model-supplied target. Authorization must eventually bind the semantically
+validated, resolved request, not merely any structurally valid record.
+
+There is no authorization issuance, consumption, state-transition method, or
+trusted registry in Milestone 2A. `USABLE` records created by callers are data,
+not execution credentials. The future executor must resolve an internal
+reference against governance-owned state. Audit events accept timezone-aware
+timestamps from other zones as well as UTC; JSONL serialization and event-specific
+payload requirements remain deferred.
+
+Neither an `authorization_id` nor `AuthorizationState.USABLE` proves trusted
+issuance. The future executor must not accept a supplied `Authorization` object
+as authority; it must retrieve the record through its internal reference boundary.
+The record is internal data, not agent-facing metadata. `USABLE` on a supplied
+record is an unverified label. Its UUID is not automatically a registered
+execution reference, and construction does not enforce identifier uniqueness.
+Those guarantees belong to future trusted issuance state.
+
+`AuditEvent.details` imposes JSON-like structure and immutability only. Sensitive
+payload/result retention and redaction policy belongs to later event producers;
+the contract neither selects retained fields nor detects secrets.
+
+`ToolDefinition` has no handler, handler-reference, or credential field. Metadata
+authors must nevertheless keep secrets and internal execution references out of
+descriptions, schema text, defaults, and examples. Structural checks reject live
+objects but cannot detect secrets embedded in otherwise valid text. No secret
+scanner, reference resolver, or payload-storage policy is part of these contracts.
 
 ## End-to-end flow
 
@@ -128,9 +184,8 @@ action ID. A consumed authorization cannot be reissued from the same decision
 or approval. Any further execution attempt requires a fresh submission.
 
 Decline, blank/default input, EOF, cancellation, or interruption never implies
-approval. Editing the proposed
-action requires a new submission and governance evaluation. There is no CLI
-override for a hard denial and no blanket approval mode.
+approval. Editing the proposed action requires a new submission and governance
+evaluation. There is no CLI override for a hard denial and no blanket approval mode.
 
 Approval and authorization records exist only for the current process. Restart
 invalidates them; the audit log is not used to recreate execution permission.
@@ -230,7 +285,13 @@ decisions for the same tool, approval binding, hard-deny precedence,
 forged/reused references, attempted authorization reissuance, mutation after
 approval, and audit failures at the relevant pre- and post-execution stages.
 
-Package layout, CLI parsing, validation and testing libraries, and the internal
-reference representation are deferred to implementation review. Provider, model,
-SDK, and model-loop integration remain deferred until the deterministic boundary
-works. A future adapter may propose actions but may not auto-dispatch tools.
+Milestone 2A uses standard-library `unittest` for contract checks. These checks
+cover record structure and immutability, not the unimplemented control flow.
+Run `python3.12 -B -m unittest discover -s tests -v` from the repository root.
+
+CLI parsing, semantic argument validation, permission/policy evaluation, the
+richer governance result, and trusted authorization-state management remain
+deferred. UUID identifiers describe the record shape without implementing an
+execution credential. Provider, model, SDK, and model-loop integration remain
+deferred until the deterministic boundary works. A future adapter may propose
+actions but may not auto-dispatch tools.
