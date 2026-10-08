@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B synchronous human approval through trusted injected callbacks is implemented for review. Executor, concrete human I/O, audit storage, CLI, and model/provider integration remain deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C executor and bounded fake tools are implemented for review. Concrete human I/O, audit storage, CLI, and model/provider integration remain deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -263,3 +263,45 @@ verification that a person actually saw the display are not provided. Current-st
 display uses a fixed snapshot, not live data: freshness and external-state TOCTOU
 protection remain deferred. No executor, handlers, CLI, concrete sink, LLM, concurrency,
 persistence, or dependency is added.
+
+## 17. Consume once, audit before dispatch, and preserve actual effects on failure
+
+**Decision:** Milestone 3C adds a domain-neutral Executor and a separate
+FakeWorkOrderTools fixture. The executor accepts only a private service reference,
+consumes it irreversibly, retrieves the exact governed action, and successfully
+writes execution_started before invoking its fixed trusted handler. Handler mappings
+are copied/read-only and separate from descriptive tool metadata. Missing handlers
+and all pre-dispatch failures leave authorization consumed.
+
+**Integration:** A private service execution scope shares the original guard across
+consumption, audit callbacks, dispatch, and completion. Public consume() remains
+compatible. Reentrant service/executor calls poison the outer operation even if
+caught; before dispatch they prevent invocation, after dispatch they preserve the
+known/uncertain effects and prohibit further callbacks. No recursive audit attempts.
+
+**Outcomes:** Immutable host reports distinguish no dispatch, completed handlers,
+trusted rejection without mutation, and possibly partial effects. ExecutionError
+preserves outcome and separate audit/handler diagnostics. Interruptions propagate
+with execution_report attached. A failed result audit does not undo a successful
+tool call. No automatic retries, rollback claims, or restored authority exist.
+ToolRejected is reserved for trusted handlers that have performed no mutation.
+Audit events retain bounded identifiers and fixed codes, never arguments, results,
+raw errors, references, review text, or human responses. Actual durability depends
+on the injected synchronous writer; no concrete sink is added.
+
+**Demo baseline tradeoff:** One per-run fixture uses fixed sample protection bounds
+and captures the same authorization service's immutable review baseline. Handlers
+independently enforce known IDs, exact fields/target consistency, allowed statuses,
+and protected/critical mutation denial. Immediately before mutation, live status
+must equal the fixed reviewed baseline. A stale mutation fails without modification
+and its reference stays consumed. After a status-changing update, subsequent mutations
+are rejected until a new run; reads and baseline-matching same-status updates work.
+No service/fixture recreation within a run may bypass that limitation. Display remains
+a fixed snapshot, not live current state; refresh and external TOCTOU protection are
+deferred rather than silently changing the approved transition.
+
+**Limits:** Host wiring must use one fixture/executor with the same service. Handler
+code and configuration are trusted; Python privacy cannot prevent arbitrary direct
+calls or malicious mutation. At-most-once dispatch does not provide exactly-once
+side effects. CLI, raw proposal parsing, concrete human I/O, concrete audit sink,
+LLM integration, concurrency, persistence, and new dependencies remain deferred.

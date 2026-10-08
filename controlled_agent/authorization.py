@@ -142,7 +142,13 @@ class AuthorizationService:
     def _write(self, event: AuditEvent) -> None:
         try:
             result = self._audit_write(event)
-        except Exception as error:
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                # Preserve interruption identity while allowing the executor to
+                # distinguish interrupted rejected-reference auditing from a
+                # failure during consumption itself. No payload is attached.
+                error._audit_write_interrupted = True
+                raise
             self._check_reentrancy()
             raise AuditWriteError("A required audit write failed") from error
         self._check_reentrancy()
@@ -316,24 +322,35 @@ class AuthorizationService:
         """Execution-side only: irreversibly consume and return the stored action.
 
         No handler is invoked and no execution-start event is fabricated here.
-        A later executor MUST write execution_started successfully after this
-        returns and before dispatch. Failure must never restore this reference.
+        The executor MUST write execution_started successfully after consumption
+        and before dispatch, using the shared guarded execution scope. Failure
+        must never restore this reference.
         """
         with self._operation():
-            # Exact type avoids attacker-controlled hash/equality callbacks.
-            entry = self._records.get(reference) if type(reference) is _Reference else None
-            if entry is None or entry.consumed:
-                action = entry.authorization.action if entry is not None else None
-                self._write(AuditEvent(
-                    action_id=action.action_id if action is not None else uuid4(),
-                    caller=action.caller if action is not None else None,
-                    event_type=AuditEventType.EXECUTION_BLOCKED,
-                    details={"reason_code": "AUTHORIZATION_CONSUMED" if entry is not None
-                             else "UNKNOWN_AUTHORIZATION"},
-                ))
-                raise InvalidReferenceError("Authorization is unknown or already consumed")
-            # Burn before constructing the replacement record or returning the
-            # action. If either fails, the entry still cannot be used again.
-            entry.consumed = True
-            entry.authorization = replace(entry.authorization, state=AuthorizationState.CONSUMED)
-            return entry.authorization.action
+            return self._consume(reference)
+
+    @contextmanager
+    def _execution_scope(self, reference: object):
+        """Executor-only scope: hold the same guard through dispatch and auditing."""
+        with self._operation():
+            yield self._consume(reference)
+
+    def _consume(self, reference: object) -> ActionRequest:
+        """Called only while the shared operation guard is held."""
+        # Exact type avoids attacker-controlled hash/equality callbacks.
+        entry = self._records.get(reference) if type(reference) is _Reference else None
+        if entry is None or entry.consumed:
+            action = entry.authorization.action if entry is not None else None
+            self._write(AuditEvent(
+                action_id=action.action_id if action is not None else uuid4(),
+                caller=action.caller if action is not None else None,
+                event_type=AuditEventType.EXECUTION_BLOCKED,
+                details={"reason_code": "AUTHORIZATION_CONSUMED" if entry is not None
+                         else "UNKNOWN_AUTHORIZATION"},
+            ))
+            raise InvalidReferenceError("Authorization is unknown or already consumed")
+        # Burn before constructing the replacement record or returning the
+        # action. If either fails, the entry still cannot be used again.
+        entry.consumed = True
+        entry.authorization = replace(entry.authorization, state=AuthorizationState.CONSUMED)
+        return entry.authorization.action

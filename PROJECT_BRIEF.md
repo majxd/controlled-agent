@@ -111,10 +111,10 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestones 2A, 2B, and 3A are approved and committed: immutable contracts,
-deterministic governance, and trusted single-use authorization. Milestone 3B adds
-optional synchronous human approval for review, using only the Python standard
-library. The service retains the exact validated/resolved action, permits ALLOW
+Milestones 2A, 2B, 3A, and 3B are approved and committed: immutable contracts,
+deterministic governance, trusted single-use authorization, and synchronous human
+approval. Milestone 3C implements the executor and bounded fake tools for review,
+using only the Python standard library. The service retains the exact validated/resolved action, permits ALLOW
 issuance directly, and permits REQUIRE_APPROVAL issuance only after explicit
 human approval and mandatory audit writes. DENY remains terminal. Reserved action
 IDs cannot be reissued after failure, denial, cancellation, or consumption.
@@ -127,6 +127,12 @@ work-order presentation. No concrete terminal interface or human authentication
 is implemented. Current-state display uses fixed resource metadata; external
 freshness and TOCTOU protection are deferred. Arguments and raw responses are
 omitted from audit events. Without approval configuration, 3A behavior is unchanged.
-Raw proposal parsing, CLI, executor, tool handlers, concrete
-audit storage, and model integration remain deferred. The full execution and
-durable audit boundary is not yet implemented.
+The executor accepts only an internal reference and holds the shared service guard
+through irreversible consumption, mandatory execution-start audit, handler call,
+and completion audit. Fake tools implement bounded reads/status updates with
+independent protection checks. Live status must match the fixed reviewed baseline
+before mutation; stale updates fail without modification, leaving authority consumed.
+Execution errors distinguish no dispatch, known rejection, potentially partial
+effects, and post-dispatch audit failure. No automatic retry or rollback is claimed.
+Raw proposal parsing, CLI, concrete audit storage, and model integration remain
+deferred. Tests use injected audit writers; durable auditing is not implemented.

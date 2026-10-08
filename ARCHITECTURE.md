@@ -5,10 +5,9 @@
 The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B
-adds optional synchronous human approval through trusted injected callbacks,
-under review. Executor, tool handlers, concrete audit storage, CLI, and provider
-integration remain deferred.
+per component. Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C
+implements the executor and bounded fake tools for review. Concrete audit storage,
+CLI, and provider integration remain deferred.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -63,7 +62,8 @@ must be written successfully before the handler can run.
 The table describes the intended control system. Milestone 2A implements the
 base records and enums; Milestone 2B adds the governance result and evaluation.
 Milestone 3A adds trusted issuance/consumption; 3B adds human approval using
-injected I/O. Dispatch, concrete terminal I/O, and audit storage remain deferred.
+injected I/O. Milestone 3C adds dispatch and fake tools. Concrete terminal I/O and
+audit storage remain deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -368,6 +368,92 @@ the fixed resource snapshot captured at service construction: live freshness,
 concurrent changes, and TOCTOU protection are explicitly deferred. No handler or
 resource mutation occurs during this workflow.
 
+### Milestone 3C executor and bounded fake tools
+
+`Executor(authorization=service, handlers=...)` snapshots a trusted handler mapping.
+The public execution method takes exactly one reference. It never accepts a raw
+action, Authorization record, governance result, approval flag, or replacement
+arguments. `ToolDefinition` and `ToolRules` remain separate from executable handlers.
+The core contains no work-order rules and performs no dynamic handler imports.
+
+The service's private `_execution_scope` holds the existing operation guard across
+consumption and the entire executor call. Public `consume()` retains its previous
+behavior via the same private consumption implementation. Issuance, public
+consumption, and any executor using this service share the guard. A caught nested
+rejection still poisons the outer call. Nested calls do not recursively audit, admit
+action IDs, or consume other references. The service itself still does not dispatch.
+
+1. Identity-check and burn the reference before returning the exact stored action.
+   Invalid/replayed references are audited by consumption, using the known action
+   ID or a fresh host-generated attempt ID. The executor does not duplicate that log.
+2. Select the fixed handler by the stored tool name. Missing handler: audit
+   execution_blocked/HANDLER_UNAVAILABLE and raise with no dispatch. Consumption
+   is permanent even for this configuration failure.
+3. Write execution_started successfully through the service's synchronous writer.
+   Check the shared reentrancy guard before calling the handler. Audit failure or
+   interruption prevents dispatch; no reference or action ID is restored.
+4. Invoke once with the same immutable action used in governance and human review.
+   No second resolution, policy evaluation, or replacement arguments are accepted.
+5. Freeze returned mapping data, then record execution_succeeded. A handler error
+   instead attempts execution_failed. A detected poisoned operation calls no more
+   external callbacks, so its audit trail may end at execution start.
+
+`ExecutionReport` is immutable host-facing data with action ID when available,
+outcome, fixed reason code, optional immutable result, completion_audited, and
+audit_failed. Outcomes mean no_dispatch, succeeded (handler returned normally),
+rejected_without_mutation, or possibly_partial. A handler returning malformed result
+data still completed; RESULT_INVALID reports the result-contract error separately
+from its effects. Result data is never automatically logged or treated as authority.
+
+Normal success returns a report. Ordinary errors raise `ExecutionError` carrying the
+report and separate audit_error/handler_error diagnostic fields. Successful effects
+can accompany a failed completion audit; no normal success return hides that failure.
+KeyboardInterrupt/SystemExit retain their type with execution_report and diagnostic
+attributes attached. An interruption of failure auditing does not hide an original
+handler interruption. Interruption before consumption returns can lack an action ID
+in the host report; this does not reopen a consumed entry. Diagnostic causes may
+contain private data and must not be exposed as raw agent-facing tracebacks.
+
+Handlers may raise `ToolRejected` with a fixed `RejectionReason` only before any
+mutation. This is a trusted handler promise, not inferred rollback. Other handler
+exceptions/interruptions are potentially partial even if a particular test handler
+happened to do nothing. If completion auditing also fails, both errors remain
+observable. No automatic retry, recursive logging retry, compensation, or restoration
+of authority exists. Abrupt process death can leave effects and logs uncertain.
+
+Execution audit details contain only bounded registered tool/resolved target,
+fixed outcome, and fixed reason codes. No arguments, result mappings, raw errors,
+review text, human responses, or references are logged. Start records describe the
+pre-dispatch gate; they do not prove handler invocation. Failed required writes
+cannot guarantee a durable record of their own failure. This milestone uses only
+injected writers and introduces no concrete sink or durability claim.
+
+`FakeWorkOrderTools(authorization=service)` owns private mutable statuses initialized
+from WORK_ORDERS and captures that service's immutable resource snapshot as its
+reviewed baseline. The host binds one fixture and one executor to the same service
+per run. Do not recreate either object to reset state or discard tombstones.
+The two handlers independently require known fixture IDs, exact target/argument
+consistency, exact field sets, and supported statuses. Update also rejects protected,
+critical, or noneditable fixtures using the fixed demo protection metadata.
+Only status can mutate; reads return detached immutable snapshots of live fake state.
+
+Immediately before assigning status, compare live status to the captured reviewed
+baseline. Missing/malformed baseline fails safely; differing status raises
+STALE_BASELINE before mutation. The normal fixture and review start open. After a
+status-changing update, subsequent mutations are rejected for that run, including
+new approvals and already-issued references; reads still work. Same-status updates
+remain possible while baseline matches. Human presentation remains the fixed
+snapshot and can be stale; the guard prevents executing that stale transition,
+not displaying it. Baseline refresh, external freshness, concurrency, and general
+TOCTOU protection are deferred.
+
+Handlers, callbacks, configuration, and host wiring are trusted application code.
+A direct malicious Python call can bypass authorization or mutate private state;
+this is not a sandbox. Tool bounds reduce accidental misuse but do not authenticate
+callers or grant authority. Dispatch is at most once per reference, not exactly-once
+transactional execution. No new dependencies, CLI, network, storage, or real tools
+are introduced.
+
 ## Planned end-to-end flow
 
 1. The controller assigns an ID and trusted caller to every submission and
@@ -460,12 +546,14 @@ Sample conventions (validation and metadata adopted in Milestone 2B):
 - The update schema accepts `work_order_id` and `new_status`; the read schema
   accepts only `work_order_id`. Status values are `open`, `in_progress`, and
   `closed`. No arbitrary field updates or user-supplied resource paths exist.
-- Milestone 2B work orders are immutable in-memory metadata. Future handlers
-  will change fixture status within a run; only the future audit log persists.
+- Milestone 2B work orders remain immutable in-memory metadata. Milestone 3C
+  handlers change private per-run fixture status; only the future audit log persists.
+  They reject mutations when live status differs from the fixed reviewed baseline.
 - A valid same-status update to an editable fixture with permission also
   requires approval. No industrial transition workflow is modeled in this MVP.
 - Policy configuration and protection metadata are fixed during a run. Human
-  review and execution are sequential, without intervening sample-data updates.
+  review and execution are sequential. An earlier authorized update can make
+  later or outstanding approvals stale; the handler rejects those mutations.
 
 | Request / condition | Risk if classified | Outcome / required behavior |
 | --- | --- | --- |
@@ -527,7 +615,7 @@ and authorization checks. Tests cover structural immutability, correlated outcom
 denial precedence, malformed arguments/targets, missing permission, spoofed
 claims, contextual risk, deterministic results, callback failures, and the absence
 of handler dispatch or issuance in pure governance. A document-domain policy exercises the generic
-core independently of work-order rules. The full execution boundary is deferred.
+core independently of work-order rules. Milestone 3C adds executor tests below.
 Run `python3.12 -B -m unittest discover -s tests -v` from the repository root.
 
 Authorization tests additionally cover internal evaluation provenance, exact
@@ -545,8 +633,13 @@ handling, closure before result auditing, audit failures, callback interruptions
 reentrancy, partial-publication cleanup, immutable review data, and rejection of
 review/audit data as authority. The 3A tests run unchanged without approval configured.
 
-CLI/raw proposal parsing, concrete human I/O, executor, tool handlers, and concrete
-audit storage remain deferred. UUID identifiers remain descriptive record data;
+Executor tests add actual handler counts and state assertions for all three demo
+paths, invalid/replayed authority, missing handlers, audit failures/interruptions,
+partial effects, reentrancy across service/executor calls, immutable result/action
+binding, bounded audit retention, independent tool bounds, and stale baselines.
+All earlier contract, governance, authorization, and approval tests remain intact.
+
+CLI/raw proposal parsing, concrete human I/O, and concrete audit storage remain deferred. UUID identifiers remain descriptive record data;
 only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose
 actions but may not auto-dispatch tools.

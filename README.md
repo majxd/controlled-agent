@@ -12,13 +12,13 @@ when required.
 
 ## Status
 
-Milestones 2A, 2B, and 3A are approved and committed. Milestone 3B synchronous
-human approval is implemented for review. Pure governance still returns
+Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C executor
+and bounded fake tools are implemented for review. Pure governance still returns
 `GovernanceResult` data. The host-only service calls governance itself and issues
 references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
-mandatory audit writes. Each reference is consumed once; no tool executes.
-Executor, tool handlers, concrete audit storage, CLI, and LLM
-integration remain deferred. No third-party dependencies are required.
+mandatory audit writes. The executor consumes each reference once and audits
+execution start before calling its trusted handler. Concrete audit storage, CLI,
+and LLM integration remain deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
@@ -37,10 +37,11 @@ python3.12 -B -m unittest discover -s tests -v
 The `controlled_agent/` package separates `contracts.py`, the domain-neutral
 `governance.py`, fake work-order rules/configuration in `demo.py`, and the internal
 `authorization.py` service. `approval.py` defines immutable review data and trusted
-injected human I/O callbacks. Tests live in `tests/`. `pyproject.toml` records project
+injected human I/O callbacks. `executor.py` implements the generic dispatch boundary;
+`demo_tools.py` owns bounded mutable fake state. Tests live in `tests/`. `pyproject.toml` records project
 metadata and the Python requirement; no installation or build setup is required.
-Passing these tests does not establish
-the deferred execution and audit boundary.
+Tests exercise execution counts, effects, and failure gates using injected test
+writers. They do not establish durable storage or production security guarantees.
 
 The evaluation entry points are `governance.evaluate_action` and
 `demo.evaluate_demo`. They accept an `ActionRequest` whose ID and caller were
@@ -59,8 +60,9 @@ and a separate host-only reference (or `None` when no authorization is issued). 
 the tuple or reference to the proposal producer, or log the reference.
 
 `consume(reference)` returns the exact stored action once, without revalidation
-or argument replacement. A later executor must successfully audit execution start
-after consumption and before dispatch. Errors never restore consumed authority.
+or argument replacement. Normal host execution uses `Executor.execute(reference)`,
+which consumes within a shared service guard and successfully audits execution
+start before dispatch. Errors never restore consumed authority.
 Repeated action IDs, failed issuance, and reentrant operations cannot issue again;
 raw proposal parsing remains outside this API.
 
@@ -90,6 +92,49 @@ REQUIRE_APPROVAL retain known resolution context too. Unknown claims and argumen
 payloads are omitted, including from issuance events; exact arguments remain in
 the private action record. Approval audits add fixed outcomes/reason codes, never
 review text or raw responses. See the [3A retention policy](ARCHITECTURE.md#milestone-3a-audit-retention-policy).
+
+## Executor and fake tools
+
+Trusted host wiring uses the same service for the fixture and executor:
+
+```python
+from controlled_agent.demo_tools import FakeWorkOrderTools
+from controlled_agent.executor import Executor
+
+# service is the host's existing configured AuthorizationService.
+fixture = FakeWorkOrderTools(authorization=service)
+executor = Executor(authorization=service, handlers=fixture.handlers)
+# Only an internally issued reference may be passed to executor.execute(reference).
+```
+
+Use one service, fixture, and executor per run. Never give the proposal producer
+these objects or their handlers. The executor accepts no action or replacement
+arguments. The handlers receive the exact retained action and independently check
+resource bounds, target consistency, supported statuses, and protection. They
+perform no filesystem, network, console, or industrial I/O.
+
+Reads return immutable snapshots of live fake state. Updates change only status.
+Immediately before mutation, the handler compares live status against the fixed
+baseline captured by its authorization service. A mismatch produces STALE_BASELINE
+without changing state; the reference stays consumed. After a status-changing
+update, further mutations are therefore rejected for that run, even after fresh
+approval. Same-status updates remain possible while the baseline matches. Review
+still shows the fixed snapshot, not live state. No refresh/reset bypass or external
+TOCTOU protection is provided.
+
+`ExecutionReport` separates completed handler execution from completion auditing.
+`ExecutionError.report` distinguishes no dispatch, known rejection without mutation,
+and potentially partial failure; it can also report a completed effect with an audit
+failure. Audit and handler errors remain separate host-only diagnostic fields.
+KeyboardInterrupt/SystemExit propagate with `execution_report` and diagnostic
+attributes. Do not expose diagnostic tracebacks as agent-facing output. Results are
+immutable data and are never automatically logged or interpreted as authority.
+
+An execution-start audit failure prevents all handler calls. Post-dispatch errors
+never promise rollback or trigger retry. Reentrant calls poison the shared operation;
+pre-dispatch detection blocks invocation, while post-dispatch detection preserves the
+known/uncertain outcome and skips further callbacks. Audit trails can be incomplete.
+Execution events retain bounded identifiers and fixed outcome/reason codes only.
 
 ## MVP demo
 

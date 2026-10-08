@@ -4,10 +4,9 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 3B, synchronous human approval workflow,
-  implemented for review. Milestones 2A, 2B, and 3A are approved and committed.
-  Do not begin executor, tool-handler,
-  CLI, concrete audit-sink, or model implementation until authorized. Do not add
+- Current milestone: Milestone 3C, executor and bounded fake tool boundary,
+  implemented for review. Milestones 2A, 2B, 3A, and 3B are approved and committed.
+  Do not begin CLI, concrete audit-sink, or model implementation until authorized. Do not add
   dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -29,12 +28,25 @@
   explicit human response through construction-time trusted review callbacks and
   successful approval-result/issuance audits. Without approval configuration it
   still issues no reference. Pending state is private and terminal on every exit.
-  Consumption does not dispatch; a later executor must audit execution start after
-  consuming and before invoking a handler, with no restoration on failure.
+  Public consume() does not dispatch. Executor.execute(reference) uses the private
+  shared service guard through consumption, execution-start audit, dispatch, and
+  completion auditing. No replacement action/arguments or restoration on failure.
+  Reentrant issue/consume/execute calls cannot dispatch another action; a poisoned
+  operation invokes no further callbacks after detection.
 - Review callbacks may describe/present the exact canonical action and collect a
   fresh human response only; they may not substitute action fields or supply model
   text as approval. Current-state display uses a fixed resource snapshot, not live
   state or TOCTOU protection. Do not log review text, arguments, or raw responses.
+- The host binds one Executor and one FakeWorkOrderTools fixture to the same
+  authorization service per run. Handler configuration is trusted and fixed.
+  The fixture captures that service's immutable review baseline and rejects a
+  mutation if live status differs. Never recreate fixtures or the service mid-run
+  to clear stale state, consumed references, or action-ID tombstones.
+- Execution reports distinguish no dispatch, completed handlers, trusted rejection
+  before mutation, and potentially partial effects. ToolRejected is a trusted
+  handler promise of no mutation, not a generic exception shortcut. Keep audit
+  failures separate from effects; interrupts retain their type and execution_report.
+  Neither reports, results, nor exceptions carry reusable authority.
 
 ## Mandatory execution boundary
 
