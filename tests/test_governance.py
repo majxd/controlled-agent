@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from controlled_agent import ActionRequest, CallerContext, Decision, GovernanceResult, Risk, ToolDefinition
 from controlled_agent.demo import PERMISSIONS, TOOLS, WORK_ORDERS, evaluate_demo
-from controlled_agent.governance import ToolRules, evaluate_action
+from controlled_agent.governance import ToolRules, _evaluate_action, evaluate_action
 
 
 class GovernanceTests(unittest.TestCase):
@@ -32,6 +32,25 @@ class GovernanceTests(unittest.TestCase):
         for target in WORK_ORDERS:
             with self.subTest(target=target):
                 self.check(self.request(target=target), Decision.ALLOW, Risk.LOW, "READ_ALLOWED")
+
+    def test_internal_evaluation_retains_only_fully_validated_actions_and_public_api_is_unchanged(self):
+        for request in (
+            self.request(), self.request("update_work_order_status"),
+            self.request("update_work_order_status", "WO-9001"),
+            self.request(arguments={"work_order_id": "WO-1001", "unexpected": True}),
+            self.request(caller="unknown"), self.request("unknown"),
+        ):
+            with self.subTest(tool=request.tool_name, arguments=request.arguments):
+                config = {"tools": TOOLS, "permissions": PERMISSIONS, "resources": WORK_ORDERS}
+                result, action, resolved_target = _evaluate_action(request, **config)
+                self.assertEqual(evaluate_action(request, **config), result)
+                expected_target = request.arguments["work_order_id"] if request.tool_name in TOOLS else None
+                self.assertEqual(resolved_target, expected_target)
+                if result.decision is Decision.DENY:
+                    self.assertIsNone(action)
+                else:
+                    self.assertEqual(action.target, request.arguments["work_order_id"])
+                    self.assertEqual(action.action_id, request.action_id)
 
     def test_same_update_tool_changes_decision_with_context_for_every_status(self):
         for status in ("open", "in_progress", "closed"):

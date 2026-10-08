@@ -4,11 +4,11 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 2B, deterministic governance with demo policy
-  configuration and focused tests, implemented for review. Milestone 2A is
-  approved and committed. Do not begin approval, authorization issuance or
-  consumption, executor, tool-handler, CLI, or audit-sink implementation until
-  authorized. Do not add dependencies, integrate a model, or commit unless requested.
+- Current milestone: Milestone 3A, trusted ALLOW-only authorization issuance and
+  single-use consumption, implemented for review. Milestones 2A and 2B are
+  approved and committed. Do not begin human approval, executor, tool-handler,
+  CLI, concrete audit-sink, or model implementation until authorized. Do not add
+  dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
   precedence; document meaningful changes to existing decisions.
@@ -17,9 +17,17 @@
 - Contracts use standard-library immutable snapshots. Their structural checks
   do not validate tool semantics, authenticate callers, evaluate policy, or
   grant execution rights. Constructing an `Authorization` record, including
-  one marked `USABLE`, must never substitute for future trusted issuance state.
+  one marked `USABLE`, must never substitute for the service's trusted issuance state.
   Neither its UUID nor its state proves issuance; do not accept a supplied record
   as executor input or expose it as agent-facing metadata.
+- The host owns one sequential authorization service per run. Reserve action IDs
+  before audit/policy callbacks; keep failures terminal. Its opaque references
+  remain internal and never enter agent-facing data or audit payloads. Reentrant
+  calls must abort the outer operation even if a callback catches the rejection.
+- Milestone 3A requires a trusted synchronous audit writer but implements no
+  concrete sink. DENY and REQUIRE_APPROVAL never issue references. Consumption
+  does not dispatch; a later executor must audit execution start after consuming
+  and before invoking a handler, with no restoration on failure.
 
 ## Mandatory execution boundary
 

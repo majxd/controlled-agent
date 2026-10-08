@@ -111,14 +111,17 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestone 2A contracts are approved and committed. Milestone 2B adds deterministic
-governance for host-assembled requests, permission checks, target resolution,
-argument validation, contextual policy/risk, and a correlated governance result.
-The fake work-order metadata and pure rules are separate from the domain-neutral
-core. This implementation and its tests are ready for review, using only the
-Python standard library.
+Milestones 2A and 2B are approved and committed: immutable contracts and
+deterministic governance with separate fake work-order rules/configuration.
+Milestone 3A adds a trusted authorization service for review, using only the
+Python standard library. It evaluates requests internally, retains the exact
+validated/resolved action, issues internal references only for ALLOW after
+mandatory audit writes, and consumes each reference at most once. Reserved
+action IDs cannot be reissued after failure, denial, or consumption.
 
-Evaluation returns a decision without executing anything or granting authority.
-Raw proposal parsing, CLI, approval workflow, authorization issuance/consumption,
-executor, tool handlers, audit storage, and model integration remain deferred.
-The full execution and audit boundary is not yet implemented.
+The pure evaluation API still returns decision data only. The service requires
+a trusted synchronous audit writer; only test writers exist so far. References
+are private process-local authority, never agent metadata or audit payloads.
+Raw proposal parsing, CLI, human approval, executor, tool handlers, concrete
+audit storage, and model integration remain deferred. The full execution and
+durable audit boundary is not yet implemented.

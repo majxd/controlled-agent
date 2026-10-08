@@ -5,10 +5,10 @@
 The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestone 2A contracts are approved and committed. Milestone 2B
-implements deterministic governance and separate demo policy/configuration,
-under review. Approval, authorization issuance/consumption, execution, tool
-handlers, audit storage, CLI, and provider integration remain deferred.
+per component. Milestones 2A and 2B are approved and committed. Milestone 3A adds
+trusted ALLOW-only authorization issuance and single-use consumption, under
+review. Human approval, executor, tool handlers, concrete audit storage, CLI,
+and provider integration remain deferred.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -61,8 +61,9 @@ must be written successfully before the handler can run.
 ## Minimal contracts
 
 The table describes the intended control system. Milestone 2A implements the
-base records and enums; Milestone 2B adds the governance result and evaluation
-described below. Approval, issuance, dispatch, and audit storage remain deferred.
+base records and enums; Milestone 2B adds the governance result and evaluation.
+Milestone 3A adds trusted issuance/consumption. Human approval, dispatch, and
+concrete audit storage remain deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -124,7 +125,7 @@ as authority; it must retrieve the record through its internal reference boundar
 The record is internal data, not agent-facing metadata. `USABLE` on a supplied
 record is an unverified label. Its UUID is not automatically a registered
 execution reference, and construction does not enforce identifier uniqueness.
-Those guarantees belong to future trusted issuance state.
+Those guarantees belong to the Milestone 3A service's trusted issuance state.
 
 `AuditEvent.details` imposes JSON-like structure and immutability only. Sensitive
 payload/result retention and redaction policy belongs to later event producers;
@@ -191,6 +192,109 @@ Missing protection/editability metadata cannot permit an update; either a true
 protected flag or a true critical flag independently hard-denies it. `DENY` has
 no approval override API. `ALLOW` and `REQUIRE_APPROVAL` are evaluation data only;
 no pending approval, authorization, tool invocation, or audit write occurs.
+
+### Milestone 3A trusted authorization service
+
+`authorization.AuthorizationService` is a host-only, domain-neutral service with
+one private registry per application run. Construction snapshots the tool mapping,
+permission sets, and nested resource metadata; trusted callback closures must
+remain fixed and pure. A required synchronous `audit_write(AuditEvent)` callable
+must return `None` only after the required write/flush succeeds, otherwise raise.
+There is no default writer and no concrete sink; test recorders are not production
+auditing. Callback purity and audit durability remain host responsibilities.
+
+`issue(request)` accepts only a host-assembled `ActionRequest`, never a result,
+authorization record, approval flag, or per-call configuration. It returns a tuple
+of reportable `GovernanceResult` and a separate host-only reference or `None`.
+The tuple and reference must never reach the proposal producer. Trust comes from
+internal evaluation and private registry membership, not dataclass construction,
+UUID representation, or a caller-supplied result.
+
+The public `evaluate_action()` API is unchanged. Its internal evaluation path now
+retains the exact resolved snapshot only after all semantic validation and
+permission gates pass. The validator sees that snapshot's arguments. The service
+calls this path itself and stores that same action object, without a second
+evaluation or target resolution during issuance/consumption. DENY has no retained
+validated action, but internal evaluation separately returns a known resolved
+target for audit context when resolution succeeded. That identifier does not
+assert argument validity or permission. REQUIRE_APPROVAL returns no reference in 3A and creates no
+pending review or approval evidence.
+
+Issuance ordering:
+
+1. Reserve the action ID before calling any audit or policy code. All admitted IDs
+   remain reserved until process exit, even for denial, failure, or interruption.
+2. Write `action_submitted` with a bounded registered tool selection explicitly
+   labeled as a submission claim, without an argument dump; evaluate; write
+   `governance_decision`. A duplicate ID is audited as a duplicate denial and
+   raises `DuplicateActionError`, without touching previously issued authority.
+3. Only ALLOW can continue. Construct internal record data; write
+   `authorization_issued` with retained tool/target identifiers, caller, action ID,
+   and an auditable UUID. Arguments stay in the exact private action record;
+   validation alone does not make them safe to log. The UUID is not an execution reference.
+4. Publish a fresh identity-bound opaque reference in the private registry. If
+   publication or return preparation raises, including interruption, remove any
+   partially inserted entry and retain the reserved ID. A successful issuance
+   audit alone never proves live authority and cannot be replayed to recover it.
+
+`consume(reference)` is reserved for the execution side. It accepts only an exact
+registered reference object from this service; supplied records, UUIDs, copies,
+unknown references, and cross-registry references fail. It marks the entry
+consumed before updating its descriptive record or returning the stored action.
+Even an interruption during that update leaves the entry consumed. Consumption
+accepts no replacement arguments or action and performs no revalidation.
+
+Rejected consumption writes `execution_blocked`, using the originating action ID
+for a known consumed reference or a fresh host ID for an unknown attempt. It never
+serializes the supplied reference. Audit failure raises without returning an
+action. Successful consumption emits no execution-start event because no executor
+exists yet. The later executor must consume, successfully write/flush
+`execution_started`, then invoke its handler; failure never restores the reference.
+
+Operations are sequential and non-reentrant, not thread-safe. A nested call sets
+an outer-failure flag and raises before callbacks or registry changes. Even if a
+callback catches that rejection, the outer operation aborts at the next gate.
+Nested rejections are not recursively audited. In-flight IDs remain reserved;
+IDs in rejected nested calls are not admitted. Ordinary audit failures raise
+`AuditWriteError`; interruptions propagate after cleanup. No automatic retry,
+registry reset, persistence, or rights recovery exists. The host must not create
+multiple live issuance authorities for the same run. Terminal entries accumulate
+in memory for the lifetime of this bounded prototype.
+
+This service has no handlers, human-input path, CLI, model integration, or concrete
+audit storage. Runtime reflection or malicious trusted callbacks can bypass Python
+privacy; those remain outside the application's interface-level threat model.
+
+#### Milestone 3A audit retention policy
+
+Action IDs, timestamps, trusted caller context, decisions, risk, and stable reason
+codes remain correlated event metadata. The host must configure public,
+non-sensitive caller/tool/resource identifiers and reason codes. This is a trust
+requirement, not automatic secret detection.
+
+- `action_submitted.submitted_tool_name` is the untrusted selection of a registered
+  tool name. Unknown tool strings are omitted (`None`), even if syntactically valid.
+  No submitted target claim or arguments are retained.
+- `governance_decision.tool_name` identifies the registered tool when known.
+  `resolved_target` comes from the same evaluation's resolver and known resource
+  metadata, never from the request's target claim. It can be present on DENY,
+  including protected mutations and invalid arguments. `action_validated` is true
+  only when all validation and permission gates passed; REQUIRE_APPROVAL can be
+  true without granting any authority. Duplicate submissions are not evaluated,
+  so their target is absent and `action_validated` is false.
+- Retained tool/target identifiers must be 1–128 ASCII letters, digits, underscores,
+  periods, colons, or hyphens. Other identifiers are omitted (`None`), not truncated
+  into misleading identities. Omission changes only logging, never governance or
+  the exact action in the registry.
+- No event produced by this service retains arguments, arbitrary proposal fields,
+  resource metadata, policy explanations, or opaque references. Issuance retains
+  only the auditable UUID and bounded tool/target identifiers in its details.
+
+These records identify attempts and outcomes, not the complete proposed payload.
+For example, they do not distinguish proposed status values on the same target
+except by action ID. Exact arguments stay in the private immutable action record
+for issued actions. Any later argument/result retention needs an explicit safe
+field policy; audit data can never recreate execution authority.
 
 ## Planned end-to-end flow
 
@@ -317,12 +421,14 @@ The minimum event vocabulary is `action_submitted`, `governance_decision`,
 denial with a validation reason. Approval results distinguish approved,
 declined, and cancelled. A denial does not produce an execution-started event.
 
-Events share the action ID. Include the tool and canonical target/arguments
-when valid, risk and reason when available, and concise execution outcomes.
-The approved action must be recoverable from correlated records. Avoid raw
-unbounded input dumps; log safe error descriptions for malformed submissions.
-Fake demo arguments can be recorded exactly. Do not log credentials or assume
-future real operational data is safe to retain without a new review.
+Events share the action ID. Include bounded known tool and resolved target context,
+risk and reason when available, and concise execution outcomes when implemented.
+Milestone 3A follows the identifier-only retention policy above; it does not log
+arguments or claim that a full action can be reconstructed from logs. Future human
+approval must display and bind the exact action held in trusted state. Retaining
+any argument or result fields in later audit events requires an explicit safe
+field policy. Avoid raw unbounded input dumps and credentials; validation alone
+does not establish that operational data is safe to retain.
 
 Required submission, decision, approval, authorization, and execution-start
 records must be successfully appended and flushed before dispatch. A failure
@@ -344,17 +450,25 @@ decisions for the same tool, approval binding, hard-deny precedence,
 forged/reused references, attempted authorization reissuance, mutation after
 approval, and audit failures at the relevant pre- and post-execution stages.
 
-Milestones 2A and 2B use standard-library `unittest` for contract and governance
-checks. Tests cover structural immutability, correlated outcomes, all demo paths,
+Milestones 2A, 2B, and 3A use standard-library `unittest` for contract, governance,
+and authorization checks. Tests cover structural immutability, correlated outcomes, all demo paths,
 denial precedence, malformed arguments/targets, missing permission, spoofed
 claims, contextual risk, deterministic results, callback failures, and the absence
-of handler dispatch or issuance. A document-domain policy exercises the generic
+of handler dispatch or issuance in pure governance. A document-domain policy exercises the generic
 core independently of work-order rules. The full execution boundary is deferred.
 Run `python3.12 -B -m unittest discover -s tests -v` from the repository root.
 
-CLI/raw proposal parsing, approval, trusted authorization-state management,
-execution, tool handlers, and audit storage remain deferred. UUID identifiers
-describe the record shape without implementing an
-execution credential. Provider, model, SDK, and model-loop integration remain
+Authorization tests additionally cover internal evaluation provenance, exact
+action retention, ALLOW-only issuance, immutable configuration, all mandatory
+issuance audit gates, interruption, partial-publication cleanup, reentrancy,
+duplicate IDs, forged/cross-registry references, replay, and consumed-state
+retention on failure. Regression tests cover non-issued audit context, safe
+identifier bounds and omitted payloads, decision-audit failures on both non-issued
+paths, duplicate audit failures preserving earlier authority, callback interruptions,
+and reentrancy after partial publication. Test writers do not establish durable audit guarantees.
+
+CLI/raw proposal parsing, human approval, executor, tool handlers, and concrete
+audit storage remain deferred. UUID identifiers remain descriptive record data;
+only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose
 actions but may not auto-dispatch tools.

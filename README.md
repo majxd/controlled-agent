@@ -12,16 +12,17 @@ when required.
 
 ## Status
 
-Milestone 2A contracts are approved and committed. Milestone 2B deterministic
-governance and its tests are implemented for review. Governance evaluates tool
-existence, arguments, target context, permissions, policy, and contextual risk.
-It returns `GovernanceResult` data without executing tools or issuing authority.
-Approval, execution, tool handlers, audit storage, CLI, and LLM integration remain
-deferred. No third-party dependencies are required.
+Milestones 2A and 2B are approved and committed. Milestone 3A trusted authorization
+issuance and single-use consumption are implemented for review. Pure governance
+still returns `GovernanceResult` data. The new host-only service calls governance
+itself, issues internal references for ALLOW only after mandatory audit writes,
+and consumes each reference once. It never executes a tool.
+Human approval, executor, tool handlers, concrete audit storage, CLI, and LLM
+integration remain deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
-execution rights. Future execution must resolve an internal reference against
-governance-owned issuance state; it must never trust a caller-created record.
+execution rights. The service checks its private registry, never caller-created
+records. Its references are identity-bound objects, distinct from auditable UUIDs.
 
 The planned MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
 and local JSONL auditing. Model/provider integration is deferred until the
@@ -34,9 +35,10 @@ python3.12 -B -m unittest discover -s tests -v
 ```
 
 The `controlled_agent/` package separates `contracts.py`, the domain-neutral
-`governance.py`, and fake work-order rules/configuration in `demo.py`. Tests live
-in `tests/`. `pyproject.toml` records project metadata and the Python requirement;
-no installation or build setup is required. Passing these tests does not establish
+`governance.py`, fake work-order rules/configuration in `demo.py`, and the internal
+`authorization.py` service. Tests live in `tests/`. `pyproject.toml` records project
+metadata and the Python requirement; no installation or build setup is required.
+Passing these tests does not establish
 the deferred execution and audit boundary.
 
 The evaluation entry points are `governance.evaluate_action` and
@@ -47,6 +49,25 @@ Targets are resolved from tool arguments against trusted resource metadata;
 neither a conflicting `ActionRequest.target` nor claimed protection flags can
 create or replace that context. Unknown targets fail closed without an invented
 risk classification.
+
+Trusted host code constructs `authorization.AuthorizationService` once per run
+with fixed configuration and a required synchronous `audit_write(event)` function.
+That writer must return `None` after successful write/flush, or raise; 3A provides
+no concrete sink or default no-op. `issue(request)` returns a reportable decision
+and a separate host-only reference (or `None` for DENY/REQUIRE_APPROVAL). Never send
+the tuple or reference to the proposal producer, or log the reference.
+
+`consume(reference)` returns the exact stored action once, without revalidation
+or argument replacement. A later executor must successfully audit execution start
+after consumption and before dispatch. Errors never restore consumed authority.
+Repeated action IDs, failed issuance, and reentrant operations cannot issue again;
+raw proposal parsing and human approval remain outside this API.
+
+Audit events retain bounded public tool/target identifiers, with submission claims
+separate from resolved context and full-action validation status. DENY and
+REQUIRE_APPROVAL retain known resolution context too. Unknown claims and argument
+payloads are omitted, including from issuance events; exact arguments remain in
+the private action record. See the [3A retention policy](ARCHITECTURE.md#milestone-3a-audit-retention-policy).
 
 ## MVP demo
 
@@ -65,7 +86,7 @@ permission, or claimed approval. Other unexpected argument fields are rejected.
 Statuses are `open`, `in_progress`, and `closed`; even a same-status editable
 update requires approval. No work-order state changes during evaluation.
 
-Future approval and authorization state will expire on restart; future local
+Authorization state expires on restart; future approval state will too. Future local
 JSONL audit logs will persist without conveying execution rights.
 
 Industrial operations are the demonstration layer; the governance core remains

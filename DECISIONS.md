@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestone 2A contracts are approved and committed. Milestone 2B deterministic governance and demo configuration are implemented for review. Approval, authorization state, execution, audit storage, CLI, and model/provider integration remain deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestones 2A and 2B are approved and committed. Milestone 3A trusted ALLOW-only issuance and consumption are implemented for review. Human approval, executor, concrete audit storage, CLI, and model/provider integration remain deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -34,7 +34,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 **Reasoning:** A caller-supplied `approved=true` flag, a mutable action, or an authorization reusable for another target would defeat the control layer. Altering the action requires another governance decision.
 
-**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. Milestone 2A represents authorization data with a UUID, a complete immutable action, and usable/consumed state. Trusted issuance, consumption, reference resolution, and semantic normalization remain deferred; constructing this record grants no authority. This decision does not require cryptographic tokens or a separate service.
+**Consequence:** Missing, invalid, mismatched, pending, denied, or already-consumed authorization cannot reach a tool. Authorization is single-use and does not survive restart. Governance issues at most one authorization per action ID; a consumed authorization cannot be reissued from the same decision or approval. Milestone 2A represents authorization data with a UUID, a complete immutable action, and usable/consumed state. Milestone 3A implements trusted ALLOW-only issuance, consumption, and reference resolution, preserving the action evaluated by governance. Approval-required issuance and actual execution remain deferred; constructing a record still grants no authority. This decision does not require cryptographic tokens or a separate service.
 
 ## 5. Require explicit human approval for the exact sensitive action
 
@@ -165,3 +165,60 @@ or weaken trusted context. Added adversarial context tests, permission checks
 across every risk and favorable policy outcome, rejection of authority fields
 on results, and file-I/O/human-input guards. No governance behavior or architecture
 changed in this review; approval and execution enforcement remain deferred.
+
+## 15. Keep issuance provenance and one-use state inside a trusted service
+
+**Decision:** Milestone 3A introduces one sequential, non-reentrant
+`AuthorizationService` per application run. It captures trusted configuration,
+calls governance internally, and retains the exact validated/resolved action.
+The public result-only governance API remains compatible. Neither imported
+evaluation results nor constructed Authorization records can be supplied for
+issuance. DENY and REQUIRE_APPROVAL never issue references in this increment.
+
+**Identity and lifetime:** Internal opaque objects identify registry entries by
+identity. Authorization UUIDs remain auditable record identifiers and are rejected
+as execution references. Copies, forged records, cross-registry references, and
+replays fail. Consumption marks the private entry consumed before any replacement
+record is constructed or the action is returned. The future executor supplies
+only the reference, never replacement arguments. No reference enters audit or
+agent-facing data. The host must use only one live service as its issuance authority.
+
+**Failure rules:** Reserve action IDs before external audit/policy callbacks and
+never release them during the run. Repeated IDs are terminal even after failure
+or denial. Submission, decision, and issuance audit writes are mandatory; no
+optional/default no-op writer exists. Publish only after issuance audit succeeds.
+Any exception or interruption before issuance returns removes partial publication
+without permitting reissuance. Reentrant calls abort the outer operation even if
+their immediate exception is caught. Single-thread sequential use remains a
+requirement; this is not a parallel dispatcher or a hostile-code sandbox.
+
+**Audit boundary:** Require a synchronous writer that returns None after required
+write/flush, or raises. Only test recording/failing writers are implemented.
+Rejected consumption is audited; accepted consumption is not execution and emits
+no execution-start event. The later executor must write execution start after
+consumption and before dispatch. A successful audit entry cannot recreate rights;
+failure after an issuance log but before publication can leave a log with no live
+reference. Logging failure after future dispatch must report actual/uncertain
+outcome separately, without retries or claims of rollback.
+
+**Safe retention:** Submission events label the claimed selection of a registered
+tool; decision events retain that known tool and the safely resolved target even
+on DENY or REQUIRE_APPROVAL. The target comes from the original evaluation, with
+no second resolution. A separate `action_validated` flag records whether all
+validation/permission gates passed; neither the flag nor any audit data grants
+authority. Public configured tool/target identifiers are retained only when they
+use 1–128 ASCII letters, digits, underscores, periods, colons, or hyphens. Unknown
+claims and out-of-policy identifiers are omitted, not truncated. Host configuration
+must keep retained identifiers and reason codes non-sensitive.
+
+No argument payload is logged, including on issuance: semantic validation is not
+a secrecy review. Exact action binding remains in the private registry. The audit
+trail identifies attempts and outcomes but cannot reconstruct full arguments;
+future payload/result retention requires an explicit safe field policy. This
+resolves the non-issued-action audit context gap without adding authority to logs
+or implementing a concrete sink.
+
+**Deferred:** Human approval and its explicit display/response binding, raw
+submission parsing, concrete JSONL storage, executor, handlers, CLI, and LLM
+integration. Tombstones and consumed entries stay in memory until exit; no
+garbage-collection policy or durable rights recovery is introduced.

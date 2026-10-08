@@ -48,7 +48,7 @@ class Risk(StrEnum):
 class AuthorizationState(StrEnum):
     """Recorded lifecycle labels, not proof of issuance or execution permission.
 
-    USABLE describes intended state in a future trusted registry. On a
+    USABLE describes recorded state in the trusted registry. On a
     caller-created record it is an unverified label, never a permission check.
     """
 
@@ -213,10 +213,11 @@ class Authorization:
     """Internal record data, never an execution credential or executor input.
 
     Holds the full immutable action, including ID, caller, tool, arguments, and
-    target. Governance will create records only after validation and any required
-    approval. The executor will resolve an opaque reference against trusted
-    state and consume it once. None of those operations exists yet: constructing
-    this dataclass is not issuance, evidence of approval, or execution authority.
+    target. The authorization service publishes references only after trusted
+    ALLOW evaluation and mandatory audit writes; approval-required issuance is deferred.
+    Its private registry resolves and consumes identity-bound references. The
+    future executor must use that boundary. Constructing this dataclass is not
+    issuance, evidence of approval, or execution authority.
     Neither authorization_id nor a USABLE state proves governance occurred.
     The identifier is record data, not a registered execution reference merely
     because it is a UUID. Construction does not enforce identifier uniqueness.
