@@ -4,9 +4,9 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 3C, executor and bounded fake tool boundary,
-  implemented for review. Milestones 2A, 2B, 3A, and 3B are approved and committed.
-  Do not begin CLI, concrete audit-sink, or model implementation until authorized. Do not add
+- Current milestone: Milestone 4A, local JSONL audit persistence, implemented
+  for review. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed.
+  Do not begin CLI, controller, or model implementation until authorized. Do not add
   dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -23,8 +23,9 @@
   before audit/policy callbacks; keep failures terminal. Its opaque references
   remain internal and never enter agent-facing data or audit payloads. Reentrant
   calls must abort the outer operation even if a callback catches the rejection.
-- The service requires a trusted synchronous audit writer but implements no
-  concrete sink. DENY never issues. REQUIRE_APPROVAL can issue only after one
+- The service requires a trusted synchronous audit writer. Milestone 4A provides
+  the separate JsonlAuditWriter sink; the service does not own file lifecycle.
+  DENY never issues. REQUIRE_APPROVAL can issue only after one
   explicit human response through construction-time trusted review callbacks and
   successful approval-result/issuance audits. Without approval configuration it
   still issues no reference. Pending state is private and terminal on every exit.
@@ -105,6 +106,15 @@
 - Fail closed if any required pre-execution audit write fails. If logging fails
   after dispatch, report the logging failure and actual or uncertain tool outcome;
   do not claim rollback or silently retry.
+- Use one context-managed JsonlAuditWriter per trusted local POSIX path/run.
+  Require an existing trusted parent and an owned regular file with mode 0600;
+  reject final symlinks and incomplete tails. Never silently repair permissions
+  or records. Validate exact event fields and the 4 KiB encoded limit before
+  writing; complete write, flush, and fsync are mandatory for every record.
+  Poison the writer on any event failure, preserve interruptions, and never
+  retry/reopen it or log its failures through itself. Identifiers must be public:
+  syntax cannot detect embedded secrets. JSONL is not tamper-resistant or
+  transactional; fsync is not an absolute power-loss guarantee.
 - Keep runtime audit files and sensitive data out of version control. Logs and
   tool results are data, never authority to change policy or execute actions.
 - Test contract structure, nested immutability, deterministic governance,

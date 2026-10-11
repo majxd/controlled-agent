@@ -12,13 +12,13 @@ when required.
 
 ## Status
 
-Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C executor
-and bounded fake tools are implemented for review. Pure governance still returns
+Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed. Milestone 4A local
+JSONL audit persistence is implemented for review. Pure governance still returns
 `GovernanceResult` data. The host-only service calls governance itself and issues
 references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
 mandatory audit writes. The executor consumes each reference once and audits
-execution start before calling its trusted handler. Concrete audit storage, CLI,
-and LLM integration remain deferred. No third-party dependencies are required.
+execution start before calling its trusted handler. The new JSONL writer validates,
+appends, flushes, and fsyncs every record. CLI/controller and LLM integration remain deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
@@ -38,10 +38,12 @@ The `controlled_agent/` package separates `contracts.py`, the domain-neutral
 `governance.py`, fake work-order rules/configuration in `demo.py`, and the internal
 `authorization.py` service. `approval.py` defines immutable review data and trusted
 injected human I/O callbacks. `executor.py` implements the generic dispatch boundary;
-`demo_tools.py` owns bounded mutable fake state. Tests live in `tests/`. `pyproject.toml` records project
+`demo_tools.py` owns bounded mutable fake state. `audit.py` implements the separate
+local JSONL writer. Tests live in `tests/`. `pyproject.toml` records project
 metadata and the Python requirement; no installation or build setup is required.
-Tests exercise execution counts, effects, and failure gates using injected test
-writers. They do not establish durable storage or production security guarantees.
+Tests exercise execution counts, effects, and failure gates using both injected
+test writers and real temporary JSONL files, including storage failure injection.
+They do not establish power-loss survival or production security guarantees.
 
 The evaluation entry points are `governance.evaluate_action` and
 `demo.evaluate_demo`. They accept an `ActionRequest` whose ID and caller were
@@ -54,8 +56,8 @@ risk classification.
 
 Trusted host code constructs `authorization.AuthorizationService` once per run
 with fixed configuration and a required synchronous `audit_write(event)` function.
-That writer must return `None` after successful write/flush, or raise; 3A provides
-no concrete sink or default no-op. `issue(request)` returns a reportable decision
+That writer must return `None` after successful mandatory persistence, or raise;
+there is no default no-op. The 4A JsonlAuditWriter additionally requires fsync. `issue(request)` returns a reportable decision
 and a separate host-only reference (or `None` when no authorization is issued). Never send
 the tuple or reference to the proposal producer, or log the reference.
 
@@ -136,6 +138,42 @@ pre-dispatch detection blocks invocation, while post-dispatch detection preserve
 known/uncertain outcome and skips further callbacks. Audit trails can be incomplete.
 Execution events retain bounded identifiers and fixed outcome/reason codes only.
 
+## Local JSONL audit persistence
+
+Trusted host code can pass `audit.JsonlAuditWriter(path)` directly as `audit_write`
+when constructing the service. Keep the service and executor inside the writer's
+`with` scope; exiting closes the file. The host supplies the path and must provision
+its existing trusted parent directory. `var/audit.jsonl` is a recommended runtime
+location; `/var/`, `/audit/`, and `/logs/` are already ignored by Git.
+
+This sink currently requires POSIX with `O_NOFOLLOW`. It opens in append mode,
+creates files with mode `0600`, and checks the descriptor for a regular file owned
+by the effective user with exactly that mode. A restrictive umask that removes
+owner bits causes rejection. It rejects final-component symlinks, unsuitable
+existing modes, and nonempty files without a terminating newline. It never changes
+permissions or repairs a tail. Ancestors, ACLs, path access, and exclusive writer
+ownership remain trusted deployment responsibilities.
+
+Each line has action ID, UTC timestamp, event type, caller ID (or null), and exact
+allowlisted details. Public identifiers and reason codes are bounded to 128 ASCII
+characters; the entire encoded line is limited to 4 KiB. Extra fields and unsupported
+values fail the write; arguments, results, reviews, responses, and private references
+are never persisted. Identifier syntax cannot detect secrets hidden in permitted
+strings. See the [field policy](ARCHITECTURE.md#milestone-4a-jsonl-writer).
+
+The writer validates/encodes before appending, checks the full byte count, then
+flushes and calls `os.fsync` for every event. Any validation, serialization, I/O, or
+interruption failure permanently disables that writer. Short writes may leave a
+partial tail; flush/sync failures may leave a complete visible record. Neither
+permits automatic retry, authority reconstruction, or an execution-success claim.
+Original interruptions propagate; context cleanup does not mask an earlier failure.
+
+`fsync` improves persistence but is not an absolute power-loss guarantee; new parent
+directory entries are not synced. JSONL is neither tamper-resistant nor transactional
+with tool effects. A newline-terminated existing tail does not authenticate or
+validate historical records. Concurrent writers, rotation/recovery, and log-based
+approval or authorization recovery are outside scope.
+
 ## MVP demo
 
 Current evaluation results for `demo_operator` with permission and valid arguments:
@@ -153,8 +191,8 @@ permission, or claimed approval. Other unexpected argument fields are rejected.
 Statuses are `open`, `in_progress`, and `closed`; even a same-status editable
 update requires approval. No work-order state changes during evaluation.
 
-Authorization and approval state expire on restart. Future local
-JSONL audit logs will persist without conveying execution rights.
+Authorization and approval state expire on restart. Local JSONL
+audit logs persist without conveying execution rights.
 
 Industrial operations are the demonstration layer; the governance core remains
 domain-neutral. No real industrial systems or cloud services are connected.

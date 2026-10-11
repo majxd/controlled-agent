@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C executor and bounded fake tools are implemented for review. Concrete human I/O, audit storage, CLI, and model/provider integration remain deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed. Milestone 4A local JSONL audit persistence is implemented for review. Concrete human I/O, CLI/controller, and model/provider integration remain deferred.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -74,7 +74,7 @@ The user-approved requirements take precedence over implementation convenience. 
 
 **Reasoning:** Observability must describe attempted actions as well as successful effects. If a required audit record cannot be written before execution, the action must not execute.
 
-**Limitations:** An unavailable audit sink cannot guarantee a persisted record of its own failure; the CLI must surface that failure. A crash or logging failure after a side effect can leave an uncertain outcome. Local JSONL is not a transactional, tamper-proof, or exactly-once execution mechanism. Audit failures after execution must not be presented as proof that the side effect did not happen. [ARCHITECTURE.md](ARCHITECTURE.md) defines the conceptual events and data-minimization boundary; concrete serialization details remain for implementation.
+**Limitations:** An unavailable audit sink cannot guarantee a persisted record of its own failure; the CLI must surface that failure. A crash or logging failure after a side effect can leave an uncertain outcome. Local JSONL is not a transactional, tamper-proof, or exactly-once execution mechanism. Audit failures after execution must not be presented as proof that the side effect did not happen. [ARCHITECTURE.md](ARCHITECTURE.md) defines the conceptual events and data-minimization boundary; Milestone 4A serialization and file policy are specified in decision 18 below.
 
 ## 10. Prove the boundary with scripted proposals first
 
@@ -305,3 +305,49 @@ code and configuration are trusted; Python privacy cannot prevent arbitrary dire
 calls or malicious mutation. At-most-once dispatch does not provide exactly-once
 side effects. CLI, raw proposal parsing, concrete human I/O, concrete audit sink,
 LLM integration, concurrency, persistence, and new dependencies remain deferred.
+
+
+## 18. Strict local JSONL persistence with mandatory per-event fsync
+
+**Decision:** Milestone 4A adds only `audit.py`, persistence/integration tests, and
+documentation. `JsonlAuditWriter(path)` is a context-managed synchronous callable
+compatible with the existing service. No authorization, approval, governance,
+executor, tool, or contract production behavior changes.
+
+Every event is explicitly encoded as a compact UTF-8 JSON object with one newline:
+action ID, UTC ISO timestamp, event type, public caller ID or null, and exact
+per-event allowlisted details. The architecture records every allowed shape,
+including both execution-blocked variants. Unknown/missing fields, unsupported
+values, nested payloads/tuples, cycles, nonfinite numbers, invalid identifiers,
+and records larger than 4096 encoded bytes including LF are rejected. Current
+shapes need only flat scalar fields. Public identifiers and reason codes have
+explicit 128-character ASCII bounds. No `default=str`, silent redaction, or
+argument/result retention is permitted. A valid identifier can still contain a
+secret; trusted configuration must keep retained strings public.
+
+**File policy:** The host provisions the existing trusted parent and supplies the
+path. The initial implementation requires POSIX O_NOFOLLOW. Append/create opening
+and descriptor checks reject final symlinks, nonregular files, foreign owners,
+and any mode other than 0600. New files request 0600 subject to umask; no chmod
+repair. Nonblocking open prevents FIFO hangs before rejection. A nonempty file
+must end in newline, but its history is not parsed or authenticated. Ancestors,
+ACLs, exclusive access, and safe path selection are host responsibilities.
+
+**Acknowledgement/failure:** Encode/validate fully before per-event I/O; write
+unbuffered bytes once, verify the complete count, flush, and os.fsync for every
+record. There is no configurable weaker policy. Any event failure permanently
+poisons that instance, including serialization and interruption; no automatic
+retry/reopen/repair or logging of failure through the same sink. Complete visible
+records after sync failure do not imply successful issuance or execution. Close
+runs once; an earlier failure/interruption is preserved if cleanup also fails,
+with a fixed note. Raw OS causes are private host diagnostics, never log details.
+
+**Reasoning and limits:** A fixed fsync gate makes persistence acknowledgement
+explicit at modest local-MVP cost. It is not an absolute power-loss guarantee and
+does not sync the parent directory entry. JSONL is neither tamper-resistant nor
+transactional with handler effects. It cannot prove historical completeness or
+provide exactly-once recovery. Failed completion logging does not undo effects;
+the existing executor reports known/uncertain outcomes without retries. No log
+record, UUID, or approval label recreates registry rights. No locking, rotation,
+concurrent writers, rights persistence, CLI/controller, model integration, or
+third-party dependency is added. Runtime files stay in already ignored directories.

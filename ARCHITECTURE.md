@@ -5,9 +5,9 @@
 The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestones 2A, 2B, 3A, and 3B are approved and committed. Milestone 3C
-implements the executor and bounded fake tools for review. Concrete audit storage,
-CLI, and provider integration remain deferred.
+per component. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed.
+Milestone 4A implements local JSONL audit persistence for review. CLI/controller,
+concrete human I/O, and provider integration remain deferred.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -62,8 +62,8 @@ must be written successfully before the handler can run.
 The table describes the intended control system. Milestone 2A implements the
 base records and enums; Milestone 2B adds the governance result and evaluation.
 Milestone 3A adds trusted issuance/consumption; 3B adds human approval using
-injected I/O. Milestone 3C adds dispatch and fake tools. Concrete terminal I/O and
-audit storage remain deferred.
+injected I/O. Milestone 3C adds dispatch and fake tools. Milestone 4A adds the
+separate JSONL writer. Concrete terminal I/O remains deferred.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -200,8 +200,9 @@ one private registry per application run. Construction snapshots the tool mappin
 permission sets, and nested resource metadata; trusted callback closures must
 remain fixed and pure. A required synchronous `audit_write(AuditEvent)` callable
 must return `None` only after the required write/flush succeeds, otherwise raise.
-There is no default writer and no concrete sink; test recorders are not production
-auditing. Callback purity and audit durability remain host responsibilities.
+There is no default writer. Milestone 4A supplies a separate context-managed
+JsonlAuditWriter that also requires per-event fsync. Test recorders are not
+production auditing. Callback purity and correct sink wiring remain host responsibilities.
 
 `issue(request)` accepts only a host-assembled `ActionRequest`, never a result,
 authorization record, approval flag, or per-call configuration. It returns a tuple
@@ -248,9 +249,9 @@ accepts no replacement arguments or action and performs no revalidation.
 Rejected consumption writes `execution_blocked`, using the originating action ID
 for a known consumed reference or a fresh host ID for an unknown attempt. It never
 serializes the supplied reference. Audit failure raises without returning an
-action. Successful consumption emits no execution-start event because no executor
-exists yet. The later executor must consume, successfully write/flush
-`execution_started`, then invoke its handler; failure never restores the reference.
+action. Public consumption emits no execution-start event and does not dispatch.
+The 3C executor consumes and successfully writes `execution_started` through the
+configured sink before invoking its handler; failure never restores the reference.
 
 Operations are sequential and non-reentrant, not thread-safe. A nested call sets
 an outer-failure flag and raises before callbacks or registry changes. Even if a
@@ -547,7 +548,7 @@ Sample conventions (validation and metadata adopted in Milestone 2B):
   accepts only `work_order_id`. Status values are `open`, `in_progress`, and
   `closed`. No arbitrary field updates or user-supplied resource paths exist.
 - Milestone 2B work orders remain immutable in-memory metadata. Milestone 3C
-  handlers change private per-run fixture status; only the future audit log persists.
+  handlers change private per-run fixture status; only the audit log persists.
   They reject mutations when live status differs from the fixed reviewed baseline.
 - A valid same-status update to an editable fixture with permission also
   requires approval. No industrial transition workflow is modeled in this MVP.
@@ -591,9 +592,9 @@ field policy. Avoid raw unbounded input dumps and credentials; validation alone
 does not establish that operational data is safe to retain.
 
 Required submission, decision, approval, authorization, and execution-start
-records must be successfully appended and flushed before dispatch. A failure
-stops execution, reports an audit error through the CLI, and does not result in
-a success response. This does not promise survival of every OS or power failure.
+records must be successfully appended, flushed, and fsynced by the 4A writer
+before dispatch. Failure stops execution and raises to the trusted host; the future
+CLI must surface it. This does not promise survival of every OS or power failure.
 
 If writing the result fails after a handler runs, the side effect cannot be
 undone merely by failing the log write. Report the tool outcome if known and
@@ -601,6 +602,87 @@ the audit failure separately; otherwise report an uncertain outcome. Do not
 retry automatically. A log ending at execution start is an incomplete attempt,
 not proof of success or proof of no effect. Complete durable auditing cannot be
 guaranteed when its storage itself is unavailable.
+
+### Milestone 4A JSONL writer
+
+`audit.JsonlAuditWriter(path)` is a context-managed callable supplied by the host
+as the service's existing `audit_write(event)`. No control-module changes or default
+writer are required. The host owns one writer per file/run, opens it before issuing
+work, and closes it after service/executor use. All work remains sequential.
+
+Each compact UTF-8 JSON object contains exactly `action_id` (canonical UUID text),
+`timestamp` (aware event time normalized to UTC ISO 8601), `event_type`, `caller`
+(public caller ID or null), and `details`, followed by exactly one LF. Timestamps
+come from the event; wall-clock authenticity and monotonicity are not guaranteed.
+The complete encoded record including LF is limited to 4096 bytes.
+
+The sink requires exactly these detail keys, without dropping extras or filling
+missing keys:
+
+| Event | Retained detail fields |
+| --- | --- |
+| action_submitted | submitted_tool_name |
+| governance_decision | decision, risk, reason_code, tool_name, resolved_target, action_validated |
+| approval_requested | tool_name, resolved_target |
+| approval_result | tool_name, resolved_target, outcome, reason_code |
+| authorization_issued | authorization_id, tool_name, target |
+| execution_started / execution_succeeded / execution_failed | tool_name, target, outcome, reason_code |
+| execution_blocked, rejected reference | reason_code |
+| execution_blocked, missing handler | tool_name, target, outcome, reason_code |
+
+Caller/tool/target identifiers use 1–128 ASCII letters, digits, `_`, `.`, `:`, or
+`-`; tool/target fields can be null exactly as producers emit them. Caller bounds
+are newly enforced by the sink; an unsuitable host caller configuration now fails
+persistence and therefore fails closed. Reason codes are 1–128 characters matching
+`[A-Z][A-Z0-9_]*`. Governance codes remain domain-neutral; decision/risk labels,
+approval outcome/reason pairs, execution outcome/reason pairs, validation booleans,
+and descriptive authorization UUIDs are checked explicitly. Producers may already
+omit unknown/unretainable tool/target claims as null; the sink itself never silently
+redacts or drops submitted details. Resolved context does not imply validation.
+
+The existing details mapping proxy is explicitly copied into a plain JSON object.
+All current schemas are flat: there are no array, nested mapping, or numeric fields
+apart from the validation boolean. Tuples/mappings in scalar fields, cycles,
+nonfinite numbers, custom objects, extra fields, and malformed envelopes are rejected
+without recursive conversion or `default=str`. There is no generic payload escape
+hatch. No arguments, results, resource snapshots, review text, raw responses,
+references, or exception messages enter records. Syntactic validation cannot detect
+secrets in permitted public strings; safe configuration remains a host obligation.
+
+Opening requires POSIX `O_NOFOLLOW`, a trusted path with an existing trusted parent,
+and an owned regular file with exactly mode 0600. `os.open` uses append/create,
+no truncation, and nonblocking mode so a FIFO cannot block before descriptor
+validation. New files request 0600 subject to umask; a resulting unsuitable mode is
+rejected without chmod. Ownership/mode/type checks and final-byte reads use the opened
+descriptor; final symlinks are rejected. Nonempty files must end in LF. This checks
+only the tail boundary, not historical JSON validity, completeness, or authenticity.
+No ancestor/ACL security management, repair, or directory creation is performed.
+The trusted parent/path and exclusive-writer assumptions exclude concurrent changes.
+
+The writer validates and encodes the whole record before file I/O for that event.
+An unbuffered binary append must return the full byte count, then flush and
+`os.fsync` must succeed before returning None. Short writes are terminal, never
+continued. Any validation/serialization/write/flush/sync exception or interruption
+permanently poisons the instance. No automatic reopen, retry, truncation, tail
+repair, or recursive failure logging occurs. Failed appends may leave partial or
+complete records; even a complete issued event cannot recreate usable authority.
+
+Close is idempotent and closes once; writes/context entry after close or failure
+are rejected. Unbuffered I/O avoids deferred buffered writes during cleanup.
+A close failure propagates if it is the only error. During context unwinding, the
+original error/interruption wins and receives a fixed cleanup-failure note without
+raw secondary diagnostic text. Underlying exception causes remain host-only.
+Constructor failures also attempt descriptor cleanup without masking the original.
+
+Per-event fsync improves persistence compared with flush alone; it is not an
+absolute power-loss guarantee across filesystems, OSes, devices, or hardware caches.
+The new file's parent directory is not fsynced. JSONL is not tamper-resistant or
+transactional with tool effects, and the writer provides no exactly-once recovery,
+rotation, locking, concurrent-writer support, cryptographic verification, or replay
+of rights. Storage failure cannot guarantee a persisted account of that failure.
+Completion failures preserve the existing executor's actual/uncertain effect report;
+no rollback or automatic retry is introduced. Runtime files belong under the
+already ignored `var/`, `audit/`, or `logs/` directories.
 
 ## Verification and deferred choices
 
@@ -639,7 +721,12 @@ partial effects, reentrancy across service/executor calls, immutable result/acti
 binding, bounded audit retention, independent tool bounds, and stale baselines.
 All earlier contract, governance, authorization, and approval tests remain intact.
 
-CLI/raw proposal parsing, concrete human I/O, and concrete audit storage remain deferred. UUID identifiers remain descriptive record data;
+Milestone 4A tests all current event shapes, strict retention, descriptor/file
+checks, record size, append ordering, poisoning, cleanup, and failure injection.
+Real service/executor integration checks counts and effects at issuance, start,
+and completion failures. The original 145 tests remain unchanged.
+
+CLI/raw proposal parsing and concrete human I/O remain deferred. UUID identifiers remain descriptive record data;
 only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose
 actions but may not auto-dispatch tools.

@@ -111,16 +111,18 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestones 2A, 2B, 3A, and 3B are approved and committed: immutable contracts,
-deterministic governance, trusted single-use authorization, and synchronous human
-approval. Milestone 3C implements the executor and bounded fake tools for review,
+Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed: immutable contracts,
+deterministic governance, trusted single-use authorization, synchronous human
+approval, executor, and bounded fake tools. Milestone 4A implements local JSONL
+audit persistence for review,
 using only the Python standard library. The service retains the exact validated/resolved action, permits ALLOW
 issuance directly, and permits REQUIRE_APPROVAL issuance only after explicit
 human approval and mandatory audit writes. DENY remains terminal. Reserved action
 IDs cannot be reissued after failure, denial, cancellation, or consumption.
 
 The pure evaluation API still returns decision data only. The service requires
-a trusted synchronous audit writer; only test writers exist so far. References
+a trusted synchronous audit writer; the context-managed JsonlAuditWriter now
+provides strict local POSIX append/flush/fsync persistence. References
 are private process-local authority, never agent metadata or audit payloads.
 Review uses trusted injected formatting/display/input callbacks, with fake local
 work-order presentation. No concrete terminal interface or human authentication
@@ -134,5 +136,15 @@ independent protection checks. Live status must match the fixed reviewed baselin
 before mutation; stale updates fail without modification, leaving authority consumed.
 Execution errors distinguish no dispatch, known rejection, potentially partial
 effects, and post-dispatch audit failure. No automatic retry or rollback is claimed.
-Raw proposal parsing, CLI, concrete audit storage, and model integration remain
-deferred. Tests use injected audit writers; durable auditing is not implemented.
+The writer enforces event-specific field allowlists, 128-character public identifier
+bounds, and a 4 KiB encoded record limit. It rejects unsuitable files and incomplete
+tails; any event failure poisons that writer without repair or retry. It uses an
+existing trusted parent and owned mode-0600 regular file, rejecting final symlinks.
+Arguments, results, review text, raw responses, private references, and exception
+messages are not retained. Syntax checks cannot detect secrets in permitted strings.
+Every successful event is flushed and fsynced, but fsync is not an absolute
+power-loss guarantee and directory entries are not synced. JSONL is neither
+tamper-resistant nor transactional, authentic historical evidence, or authority.
+Raw proposal parsing, CLI/controller, concrete human I/O, and model integration
+remain deferred. Tests use temporary files and injected storage failures to verify
+actual handler counts/state; crash durability and concurrent writers are not claimed.
