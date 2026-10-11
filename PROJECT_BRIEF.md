@@ -111,10 +111,11 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed: immutable contracts,
+Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed: immutable contracts,
 deterministic governance, trusted single-use authorization, synchronous human
-approval, executor, and bounded fake tools. Milestone 4A implements local JSONL
-audit persistence for review,
+approval, executor, bounded fake tools, and JSONL audit persistence. Milestone 4B
+implements bounded proposal admission, controller orchestration, and a local
+interactive CLI for review,
 using only the Python standard library. The service retains the exact validated/resolved action, permits ALLOW
 issuance directly, and permits REQUIRE_APPROVAL issuance only after explicit
 human approval and mandatory audit writes. DENY remains terminal. Reserved action
@@ -125,8 +126,8 @@ a trusted synchronous audit writer; the context-managed JsonlAuditWriter now
 provides strict local POSIX append/flush/fsync persistence. References
 are private process-local authority, never agent metadata or audit payloads.
 Review uses trusted injected formatting/display/input callbacks, with fake local
-work-order presentation. No concrete terminal interface or human authentication
-is implemented. Current-state display uses fixed resource metadata; external
+work-order presentation. The CLI now supplies a concrete terminal adapter; human
+authentication is not implemented. Current-state display uses fixed resource metadata; external
 freshness and TOCTOU protection are deferred. Arguments and raw responses are
 omitted from audit events. Without approval configuration, 3A behavior is unchanged.
 The executor accepts only an internal reference and holds the shared service guard
@@ -145,6 +146,15 @@ messages are not retained. Syntax checks cannot detect secrets in permitted stri
 Every successful event is flushed and fsynced, but fsync is not an absolute
 power-loss guarantee and directory entries are not synced. JSONL is neither
 tamper-resistant nor transactional, authentic historical evidence, or authority.
-Raw proposal parsing, CLI/controller, concrete human I/O, and model integration
-remain deferred. Tests use temporary files and injected storage failures to verify
-actual handler counts/state; crash durability and concurrent writers are not claimed.
+Controller-generated UUIDs and the configured caller enter the service before
+bounded structural parsing. Both admission APIs share the same guard and registry;
+malformed proposals receive audited denial without a fake ActionRequest. The CLI
+uses three fixed scripted choices, one service/fixture per session, and no direct
+handler path. Invalid menu choices create no action. Terminal review is flushed
+before one fresh response; EOF, oversized input, and interruption fail closed.
+Reports separate audit failure from completed/uncertain effects; raw exceptions
+and arbitrary results are not printed. Model/provider integration remains deferred.
+Tests inject terminal streams and storage failures and use real temporary JSONL to
+verify handler counts, state, correlation, and failure paths. Crash durability,
+concurrent writers, authentication, and arbitrary malicious Python containment are
+not claimed. The four unrelated pitch/speaker-guide artifacts are outside scope.

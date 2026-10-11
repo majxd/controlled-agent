@@ -15,9 +15,10 @@ from uuid import UUID, uuid4
 from .approval import ApprovalChange, ApprovalReview, HumanApprovalAdapter
 from .contracts import (
     ActionRequest, AuditEvent, AuditEventType, Authorization, AuthorizationState,
-    Decision, GovernanceResult, JSONValue, _freeze_mapping,
+    CallerContext, Decision, GovernanceResult, JSONValue, _freeze_mapping,
 )
 from .governance import ToolRules, _evaluate_action
+from .submission import MalformedProposal, parse_proposal
 
 
 def _audit_identifier(value: str | None) -> str | None:
@@ -254,66 +255,107 @@ class AuthorizationService:
             pending.closed = True
             self._pending = None
 
-    def issue(self, request: ActionRequest) -> tuple[GovernanceResult, object | None]:
-        """Evaluate internally and return (reportable result, host-only reference).
+    @contextmanager
+    def _admission(self, action_id: UUID, caller: CallerContext, tool_name: str | None):
+        """Both host APIs reserve in the same registry before any callback."""
+        with self._operation():
+            if type(action_id) is not UUID or type(caller) is not CallerContext:
+                raise TypeError("Admission requires trusted ID and caller context")
+            duplicate = action_id in self._seen
+            self._seen.add(action_id)
+            self._write(AuditEvent(
+                action_id=action_id, caller=caller, event_type=AuditEventType.ACTION_SUBMITTED,
+                details={"submitted_tool_name": tool_name},
+            ))
+            if duplicate:
+                self._submission_denial(action_id, caller, "DUPLICATE_ACTION_ID", tool_name)
+                raise DuplicateActionError("An action ID cannot be reused")
+            yield
 
-        DENY never issues. REQUIRE_APPROVAL can issue only after configured human
-        review; its original decision stays REQUIRE_APPROVAL in the return tuple.
-        All admitted IDs are terminal, including review/issuance failures.
-        Raw proposal parsing/ID assignment belong to the later controller.
+    def _submission_denial(self, action_id, caller, code, tool_name=None):
+        result = GovernanceResult(
+            action_id=action_id, decision=Decision.DENY, reason_code=code,
+            explanation="Submission cannot be admitted.",
+        )
+        self._write(AuditEvent(
+            action_id=action_id, caller=caller, event_type=AuditEventType.GOVERNANCE_DECISION,
+            details={"decision": "DENY", "risk": None, "reason_code": code,
+                     "tool_name": tool_name, "resolved_target": None, "action_validated": False},
+        ))
+        return result
+
+    def issue(self, request: ActionRequest) -> tuple[GovernanceResult, object | None]:
+        """Existing host-assembled request API; records alone grant no rights."""
+        if not isinstance(request, ActionRequest):
+            with self._operation():
+                raise TypeError("request must be a host-assembled ActionRequest")
+        return self._issue(request=request, action_id=request.action_id, caller=request.caller)
+
+    def issue_proposal(
+        self, proposal: object, *, action_id: UUID, caller: CallerContext,
+    ) -> tuple[GovernanceResult, object | None]:
+        """Host-only admission of bounded data, never supplied authority/config.
+
+        The host assigns ID/caller before parsing. Submission is audited before
+        inspecting data, so its tool claim is null. Structural rejection creates
+        no ActionRequest. Semantic validation remains exclusively governance's.
         """
+        return self._issue(proposal=proposal, action_id=action_id, caller=caller)
+
+    def _issue(self, *, action_id, caller, request=None, proposal=None):
         reference = None
         try:
-            with self._operation():
-                if not isinstance(request, ActionRequest):
-                    raise TypeError("request must be a host-assembled ActionRequest")
-                duplicate = request.action_id in self._seen
-                self._seen.add(request.action_id)  # Before any audit or policy callback.
-                self._write(AuditEvent(
-                    action_id=request.action_id, caller=request.caller,
-                    event_type=AuditEventType.ACTION_SUBMITTED,
-                    # A claimed selection of a public registered tool, not validation.
-                    details={"submitted_tool_name": self._audit_tool_name(request)},
-                ))
-                if duplicate:
-                    result = GovernanceResult(
-                        action_id=request.action_id, decision=Decision.DENY,
-                        reason_code="DUPLICATE_ACTION_ID",
-                        explanation="This action ID has already been submitted.",
-                    )
-                    self._write(self._decision_event(request, result))
-                    raise DuplicateActionError("An action ID cannot be reused")
-
-                result, action, resolved_target = _evaluate_action(
-                    request, tools=self._tools, permissions=self._permissions,
-                    resources=self._resources,
-                )
-                self._check_reentrancy()
-                self._write(self._decision_event(request, result, action, resolved_target))
-                if result.decision is not Decision.ALLOW and result.decision is not Decision.REQUIRE_APPROVAL:
-                    return result, None
-                if action is None:
-                    raise AuthorizationError("Evaluation did not retain a validated action")
-                if result.decision is Decision.REQUIRE_APPROVAL and not self._review_action(action, result):
-                    return result, None
-
-                authorization = Authorization(
-                    authorization_id=uuid4(), action=action, state=AuthorizationState.USABLE,
-                )
-                self._write(AuditEvent(
-                    action_id=action.action_id, caller=action.caller,
-                    event_type=AuditEventType.AUTHORIZATION_ISSUED,
-                    details={"authorization_id": str(authorization.authorization_id),
-                             "tool_name": self._audit_tool_name(action),
-                             "target": _audit_identifier(action.target)},
-                ))
-                reference = _Reference()
-                self._publish(reference, authorization)
-                self._check_reentrancy()
+            tool_name = self._audit_tool_name(request) if request is not None else None
+            with self._admission(action_id, caller, tool_name):
+                if request is None:
+                    try:
+                        tool, arguments = parse_proposal(proposal)
+                    except MalformedProposal:
+                        self._check_reentrancy()
+                        return self._submission_denial(action_id, caller, "MALFORMED_PROPOSAL"), None
+                    self._check_reentrancy()
+                    request = ActionRequest(action_id=action_id, caller=caller,
+                                            tool_name=tool, arguments=arguments)
+                result, reference = self._issue_action(request)
             return result, reference
         except BaseException:
-            # Also cover interruption and partial publication. The audit may
-            # already say 'issued'; it cannot reconstruct registry authority.
+            # Guard unwinding/return preparation can fail after publication too.
+            if reference is not None:
+                self._records.pop(reference, None)
+            raise
+
+    def _issue_action(self, request: ActionRequest) -> tuple[GovernanceResult, object | None]:
+        """Admitted request only; called under the shared operation guard."""
+        reference = None
+        try:
+            result, action, resolved_target = _evaluate_action(
+                request, tools=self._tools, permissions=self._permissions,
+                resources=self._resources,
+            )
+            self._check_reentrancy()
+            self._write(self._decision_event(request, result, action, resolved_target))
+            if result.decision is not Decision.ALLOW and result.decision is not Decision.REQUIRE_APPROVAL:
+                return result, None
+            if action is None:
+                raise AuthorizationError("Evaluation did not retain a validated action")
+            if result.decision is Decision.REQUIRE_APPROVAL and not self._review_action(action, result):
+                return result, None
+
+            authorization = Authorization(
+                authorization_id=uuid4(), action=action, state=AuthorizationState.USABLE,
+            )
+            self._write(AuditEvent(
+                action_id=action.action_id, caller=action.caller,
+                event_type=AuditEventType.AUTHORIZATION_ISSUED,
+                details={"authorization_id": str(authorization.authorization_id),
+                         "tool_name": self._audit_tool_name(action),
+                         "target": _audit_identifier(action.target)},
+            ))
+            reference = _Reference()
+            self._publish(reference, authorization)
+            self._check_reentrancy()
+            return result, reference
+        except BaseException:
             if reference is not None:
                 self._records.pop(reference, None)
             raise

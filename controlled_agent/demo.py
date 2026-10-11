@@ -127,3 +127,14 @@ def format_work_order_approval(
         current_state={"status": current}, proposed_state={"status": proposed},
         intended_effect=f"Set this fake work order's status from {current} to {proposed}.",
     )
+
+
+def scripted_proposal(choice: str) -> dict | None:
+    """Data source only. No application components or callbacks are provided."""
+    if choice == "1":
+        return {"tool_name": "get_work_order", "arguments": {"work_order_id": "WO-1001"}}
+    if choice in ("2", "3"):
+        return {"tool_name": "update_work_order_status", "arguments": {
+            "work_order_id": "WO-1001" if choice == "2" else "WO-9001", "new_status": "closed",
+        }}
+    return None

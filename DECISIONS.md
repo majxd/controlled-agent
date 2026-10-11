@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed. Milestone 4A local JSONL audit persistence is implemented for review. Concrete human I/O, CLI/controller, and model/provider integration remain deferred.
+This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed. Milestone 4B controller and local interactive CLI are implemented for review. Model/provider integration remains deferred. Earlier entries retain the scope of their original milestone; decision 19 records the current integration.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -351,3 +351,52 @@ the existing executor reports known/uncertain outcomes without retries. No log
 record, UUID, or approval label recreates registry rights. No locking, rotation,
 concurrent writers, rights persistence, CLI/controller, model integration, or
 third-party dependency is added. Runtime files stay in already ignored directories.
+
+
+## 19. One service-owned admission boundary and one CLI application lifetime
+
+**Decision:** Milestone 4B adds a bounded pure proposal parser, thin controller,
+terminal CLI, and module entry point. The demo layer supplies three scripted data
+proposals without receiving execution components. The controller generates a UUID
+before parsing and supplies its fixed caller. Only the executor invokes handlers.
+
+The host-only issue_proposal API shares admission, ID tombstones, reentrancy guard,
+governance, approval, issuance, and cleanup with issue(ActionRequest). Submission
+audit precedes parsing and therefore has a null tool claim. Malformed proposals
+receive correlated DENY/MALFORMED_PROPOSAL with no validated action or fabricated
+risk/target. Parser limits: exact plain tool_name/arguments envelope, tool/key length
+128, eight flat scalar arguments, string values 256, signed 64-bit integers, finite
+floats, and compact UTF-8 proposal size 4096 bytes. Bounds do not validate semantics;
+governance still decides permission, target context, risk, and hard denial.
+
+**Reasoning:** A second controller admission registry or placeholder ActionRequest
+would weaken correlation and terminal failure semantics. Shared service admission
+keeps both APIs compatible and prevents reissuance across them. No audit sink,
+contract, governance, executor, or handler policy changes are required. The controller
+returns no reference and emits no duplicate lifecycle audits.
+
+**Terminal policy:** One writer/service/fixture/executor per session with demo_operator
+and fixed configuration. Existing trusted audit parent required; optional audit path
+is host startup configuration only. Real startup requires interactive terminal input
+and output; test hosts inject streams. Flush the canonical fixed-baseline review
+before one fresh response. Only the existing approve rule issues. Reject lines over
+256 content characters and unterminated EOF lines rather than authorizing a prefix.
+Invalid menu choices create no action. No auto-approve option or default response.
+
+**Results/failures:** Fixed outcome messages separate denied, malformed, approval
+not granted, succeeded, rejected without mutation, blocked, uncertain effects, and
+audit failure. Decline/cancellation remain grouped because the existing API groups
+them; the audit is more specific. Raw exceptions/references are never output. Only
+known demo result ID/status fields are rendered; tool output remains untrusted.
+EOF cancels approval and ends the session. KeyboardInterrupt exits 130 after existing
+cleanup/reporting; SystemExit from session callbacks is sanitized as interruption
+and exits 1. Operational failures exit 1, usage/noninteractive errors 2, normal
+exit 0. Pre-dispatch audit failure prevents effects, while post-dispatch failures
+retain completed/uncertain effects. Close errors never imply rollback. No retry.
+
+**Limitations:** Terminal access is not human authentication or proof of viewing.
+Review remains a fixed snapshot and later updates can become stale; no reset or
+refresh is introduced. Security remains an application interface boundary in one
+trusted sequential process. No model, network, concurrent processing, new dependencies,
+or persistence beyond JSONL. Runtime logs and the four unrelated presentation
+artifacts stay out of version control. All 184 prior tests remain intact.

@@ -12,13 +12,14 @@ when required.
 
 ## Status
 
-Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed. Milestone 4A local
-JSONL audit persistence is implemented for review. Pure governance still returns
+Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed. Milestone 4B
+controller and local interactive CLI are implemented for review. Pure governance still returns
 `GovernanceResult` data. The host-only service calls governance itself and issues
 references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
 mandatory audit writes. The executor consumes each reference once and audits
 execution start before calling its trusted handler. The new JSONL writer validates,
-appends, flushes, and fsyncs every record. CLI/controller and LLM integration remain deferred. No third-party dependencies are required.
+appends, flushes, and fsyncs every record. The CLI connects a bounded scripted
+proposal source to the existing control boundary. LLM integration remains deferred. No third-party dependencies are required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
@@ -39,7 +40,8 @@ The `controlled_agent/` package separates `contracts.py`, the domain-neutral
 `authorization.py` service. `approval.py` defines immutable review data and trusted
 injected human I/O callbacks. `executor.py` implements the generic dispatch boundary;
 `demo_tools.py` owns bounded mutable fake state. `audit.py` implements the separate
-local JSONL writer. Tests live in `tests/`. `pyproject.toml` records project
+local JSONL writer. `submission.py` parses bounded proposal data; `controller.py`
+orchestrates admission/execution; `cli.py` owns trusted terminal wiring. Tests live in `tests/`. `pyproject.toml` records project
 metadata and the Python requirement; no installation or build setup is required.
 Tests exercise execution counts, effects, and failure gates using both injected
 test writers and real temporary JSONL files, including storage failure injection.
@@ -66,7 +68,9 @@ or argument replacement. Normal host execution uses `Executor.execute(reference)
 which consumes within a shared service guard and successfully audits execution
 start before dispatch. Errors never restore consumed authority.
 Repeated action IDs, failed issuance, and reentrant operations cannot issue again;
-raw proposal parsing remains outside this API.
+the new `issue_proposal(proposal, action_id=..., caller=...)` API shares these
+guarantees and audits before structural parsing. Host code supplies the ID/caller;
+the proposal supplies neither. `issue(ActionRequest)` remains supported.
 
 Approval is optional and configured only at construction: supply both
 `approval_formatter=demo.format_work_order_approval` and
@@ -76,7 +80,8 @@ the exact action identity and current/proposed state plus intended effect. It mu
 present the complete review and return `None`, or raise. The input callback must
 collect one fresh human response. Only plain-string `approve`, with surrounding
 whitespace allowed, is affirmative. `decline` refuses; empty/None/other responses,
-EOF, errors, and interruptions never authorize. There is no default console I/O,
+EOF, errors, and interruptions never authorize. The CLI supplies console I/O;
+the service itself still has no default input source,
 public approval endpoint, or pending token. Missing approval configuration keeps
 the 3A behavior: REQUIRE_APPROVAL returns no reference.
 
@@ -94,6 +99,61 @@ REQUIRE_APPROVAL retain known resolution context too. Unknown claims and argumen
 payloads are omitted, including from issuance events; exact arguments remain in
 the private action record. Approval audits add fixed outcomes/reason codes, never
 review text or raw responses. See the [3A retention policy](ARCHITECTURE.md#milestone-3a-audit-retention-policy).
+
+## Run the local scripted demo
+
+From the repository root on POSIX with Python 3.12+, provision a trusted local
+runtime directory, then run:
+
+```sh
+mkdir -m 700 var
+python3.12 -B -m controlled_agent
+```
+
+If `var` already exists, verify it is your trusted runtime directory rather than
+changing its permissions automatically. The writer requires an existing parent and
+an owned mode-0600 regular audit file. `--audit-path /trusted/path/audit.jsonl`
+selects a host-owned path at startup; proposals cannot change it. Use an already
+ignored runtime directory (`var/`, `audit/`, or `logs/`); never commit runtime logs.
+
+The menu offers `1` read WO-1001, `2` close WO-1001, `3` attempt to close protected
+WO-9001, and `q` quit. Other choices create no action or audit submission. The real
+entry point requires interactive terminal input/output; no auto-approve option or
+piped approval is supported. Host tests inject trusted streams into `run_session`.
+
+Each action gets a fresh UUID and fixed caller `demo_operator`. Approval displays
+canonical identity, fixed reviewed baseline, proposed status, and intended effect,
+then flushes before reading one response. Type `approve` or `decline`. Empty/invalid
+responses and EOF never authorize. Lines over 256 content characters terminate the
+session; the CLI never approves a truncated prefix. Unterminated EOF input is also
+cancelled. Approval data and raw input are never written to JSONL.
+
+One service, fixture, executor, and writer serve the entire menu session. After an
+approved status-changing update, reads show `closed` and later mutations may be
+rejected with `STALE_BASELINE`. The session never refreshes the review snapshot or
+resets action-ID tombstones. Governance denial and approval-not-granted return to
+the menu; known no-mutation rejections also allow another explicit selection.
+Unexpected execution, review, terminal, and audit errors stop the run. Effects are
+reported separately from failed auditing; nothing is retried or claimed rolled back.
+Exit codes: 0 normal quit/EOF, 1 operational failure, 2 command-line usage or missing
+interactive terminal, 130 KeyboardInterrupt. A SystemExit raised by session callbacks is safely reported
+as an interrupted operational failure (1), without printing its raw message.
+Approval EOF cancels and exits.
+
+The controller accepts only a plain `tool_name`/`arguments` envelope. The parser
+limits tool/key lengths to 128 characters, string values to 256, argument count to
+eight, integers to signed 64-bit, floats to finite values, and encoded proposals
+to 4096 bytes. Nested containers, custom types, and top-level identity/authority
+fields are rejected. Tool-specific arguments and policy are still checked by
+governance. Malformed proposals are audited as DENY/MALFORMED_PROPOSAL with null
+risk/target and no validated action. Submission tool names are null on this path
+because auditing precedes parsing; later decision records retain resolved context.
+
+Controller reports contain no references or raw exceptions. Tool results remain
+untrusted data; the CLI prints only known demo IDs/status values, never arbitrary
+result mappings. The current issuance API groups decline/cancellation as approval
+not granted; the audit retains its more specific outcome. Terminal access does not
+authenticate a human or prove that they viewed the review.
 
 ## Executor and fake tools
 

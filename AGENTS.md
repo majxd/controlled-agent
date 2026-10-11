@@ -4,9 +4,9 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 4A, local JSONL audit persistence, implemented
-  for review. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed.
-  Do not begin CLI, controller, or model implementation until authorized. Do not add
+- Current milestone: Milestone 4B, controller and local interactive CLI, implemented
+  for review. Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed.
+  Do not begin model/provider integration or expand the CLI until authorized. Do not add
   dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -32,7 +32,7 @@
   Public consume() does not dispatch. Executor.execute(reference) uses the private
   shared service guard through consumption, execution-start audit, dispatch, and
   completion auditing. No replacement action/arguments or restoration on failure.
-  Reentrant issue/consume/execute calls cannot dispatch another action; a poisoned
+  Reentrant issue/issue_proposal/consume/execute calls cannot dispatch another action; a poisoned
   operation invokes no further callbacks after detection.
 - Review callbacks may describe/present the exact canonical action and collect a
   fresh human response only; they may not substitute action fields or supply model
@@ -48,6 +48,21 @@
   handler promise of no mutation, not a generic exception shortcut. Keep audit
   failures separate from effects; interrupts retain their type and execution_report.
   Neither reports, results, nor exceptions carry reusable authority.
+
+- Controller.submit assigns a fresh host UUID before parsing and attaches its fixed
+  caller. issue_proposal and issue share the same service admission guard, ID
+  tombstones, evaluation, approval, publication, and rollback logic. Audit submission
+  before parsing; malformed proposals receive DENY/MALFORMED_PROPOSAL without a
+  placeholder ActionRequest. Do not create a controller-owned admission registry.
+- The parser accepts only plain tool_name/arguments dictionaries with bounded flat
+  scalar arguments. Top-level authority fields are invalid; argument claims remain
+  untrusted data subject to governance. Invalid menu choices are UI errors, not
+  action submissions. Scripted proposal production receives no execution components.
+- CLI sessions own one writer/service/fixture/executor throughout. Use canonical
+  review text, flush before input, and never accept truncated or unterminated EOF
+  input as approval. No auto-approve or model-selected configuration. Render only
+  fixed outcome messages and bounded public demo result fields, never exceptions.
+  Exit on operational/audit failures without retry or resetting security state.
 
 ## Mandatory execution boundary
 

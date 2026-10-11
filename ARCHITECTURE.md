@@ -6,8 +6,10 @@ The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
 per component. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed.
-Milestone 4A implements local JSONL audit persistence for review. CLI/controller,
-concrete human I/O, and provider integration remain deferred.
+Milestone 4A is also approved and committed. Milestone 4B implements bounded
+proposal admission, controller, and local terminal I/O for review. Provider/model
+integration remains deferred. Earlier milestone sections describe their original
+increments; the 4B section below records the current end-to-end integration.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -63,7 +65,7 @@ The table describes the intended control system. Milestone 2A implements the
 base records and enums; Milestone 2B adds the governance result and evaluation.
 Milestone 3A adds trusted issuance/consumption; 3B adds human approval using
 injected I/O. Milestone 3C adds dispatch and fake tools. Milestone 4A adds the
-separate JSONL writer. Concrete terminal I/O remains deferred.
+separate JSONL writer. Milestone 4B connects them through the controller and CLI.
 
 | Concept | Minimum content and ownership |
 | --- | --- |
@@ -144,8 +146,8 @@ host-assembled `ActionRequest` and trusted tool rules, permission sets, and reso
 metadata. Caller identity and the action ID are trusted application inputs; this
 API does not authenticate them or deserialize model output. Non-`ActionRequest`
 input raises `TypeError` without an outcome or authority. Semantically malformed
-records return `DENY`. Raw parsing, submission IDs, and audit integration remain
-controller work for a later milestone.
+records return `DENY`. Milestone 4B supplies submission IDs through the controller
+and structural parsing/audit admission through the authorization service.
 
 Internal `ToolRules` combines public `ToolDefinition` data with three trusted pure
 functions: argument validation, target resolution, and contextual policy
@@ -303,7 +305,8 @@ field policy; audit data can never recreate execution authority.
 The host may supply both `approval_formatter` and `human_approval` when constructing
 the service. Supplying only one is an error. `HumanApprovalAdapter` holds trusted
 `display(ApprovalReview)` and `read_response()` callbacks; no default input source
-or concrete terminal adapter is implemented. Callbacks must be synchronous.
+is supplied by the service. Milestone 4B supplies the concrete terminal adapter
+from the CLI. Callbacks must be synchronous.
 The service controls their ordering and checks reentrancy after each callback.
 No review dependencies, responses, decisions, or replacement actions are accepted
 as per-request issuance arguments.
@@ -455,10 +458,10 @@ callers or grant authority. Dispatch is at most once per reference, not exactly-
 transactional execution. No new dependencies, CLI, network, storage, or real tools
 are introduced.
 
-## Planned end-to-end flow
+## End-to-end flow
 
-1. The controller assigns an ID and trusted caller to every submission and
-   writes a bounded, safe submission record before validation. An audit failure
+1. The controller assigns an ID and trusted caller to every proposal submission.
+   The service reserves that ID and writes its safe submission record before parsing. An audit failure
    stops processing and is reported to the CLI with the action ID.
 2. Governance resolves the tool and known target where possible and validates
    arguments. Invalid input cannot produce an executable request; valid input
@@ -593,8 +596,8 @@ does not establish that operational data is safe to retain.
 
 Required submission, decision, approval, authorization, and execution-start
 records must be successfully appended, flushed, and fsynced by the 4A writer
-before dispatch. Failure stops execution and raises to the trusted host; the future
-CLI must surface it. This does not promise survival of every OS or power failure.
+before dispatch. Failure stops execution and raises to the trusted host; the CLI
+surfaces a safe error and terminates the session. This does not promise survival of every OS or power failure.
 
 If writing the result fails after a handler runs, the side effect cannot be
 undone merely by failing the log write. Report the tool outcome if known and
@@ -684,6 +687,83 @@ Completion failures preserve the existing executor's actual/uncertain effect rep
 no rollback or automatic retry is introduced. Runtime files belong under the
 already ignored `var/`, `audit/`, or `logs/` directories.
 
+### Milestone 4B controller and local CLI
+
+`python -m controlled_agent` runs an interactive terminal session. Startup owns one
+JsonlAuditWriter, fixed demo configuration/caller, terminal approval adapter,
+AuthorizationService, FakeWorkOrderTools, Executor, and Controller. No component is
+recreated between choices. The demo's pure scripted_proposal function receives only
+a menu choice and returns fresh data; it imports no handlers and receives no service,
+writer, credentials, or references. Invalid menu choices and quit/EOF are UI control
+inputs, not fabricated action submissions.
+
+Controller.submit generates a UUID before inspecting proposal data, attaches its
+construction-time CallerContext, and calls issue_proposal. The new host-only API
+and existing issue(ActionRequest) share _admission (one _operation guard and _seen
+set) and _issue_action (evaluation, exact action, approval, issuance, and cleanup).
+An outer failure boundary also removes new authority if guard exit fails after
+publication. Duplicate IDs across either API preserve earlier authority and cannot
+be reissued. The controller has no admission registry or independent audit writer.
+
+For proposal admission, reserve the ID and successfully write action_submitted with
+submitted_tool_name=null before parsing. A fixed parser checks a plain dictionary
+with exactly tool_name and arguments, a nonblank tool name of at most 128 characters,
+and at most eight plain string keys of 1–128 characters. Argument values may be
+strings up to 256 characters, signed 64-bit integers, finite floats, booleans, or null.
+The compact UTF-8 encoded proposal must not exceed 4096 bytes. Nested containers,
+custom objects/subclasses, cycles, nonfinite numbers, and extra envelope fields
+fail structural parsing. No model-supplied identity, policy, target, metadata,
+approval, handler, or audit path can enter trusted configuration. Scalar claims
+inside arguments remain untrusted data for semantic governance checks.
+
+MalformedProposal produces governance_decision with DENY/MALFORMED_PROPOSAL,
+risk=null, tool_name=null, resolved_target=null, action_validated=false, and the
+same host ID/caller. No ActionRequest is fabricated. Failure/interruption retains
+the ID; interrupted parsing can leave only the submission event, never authority.
+Structurally valid proposals become immutable ActionRequests with target=None;
+existing governance alone resolves targets and retains semantically valid actions.
+No new audit shape or retention policy is needed.
+
+Controller holds references locally and immediately calls Executor.execute, with
+no output callback or proposal access between issuance and execution. Non-issued
+actions never call execute. Nested submissions during service/executor callbacks
+hit the existing shared guard and poison the outer operation even if the nested
+error is caught. ControllerReport carries fixed outcome labels, action ID, decision,
+execution effect classification, audit-failure/terminal flags, and optional immutable
+tool result data; no references or exceptions. Results remain untrusted data.
+The CLI renders only known work-order IDs/statuses, not arbitrary mappings or errors.
+Approval-not-granted groups decline/cancellation; exact details remain in the audit.
+
+Menu choices read WO-1001, close WO-1001, and attempt to close WO-9001. Canonical
+review shows ID, caller, tool, target, fixed reviewed baseline, proposed status, and
+formatter-derived intended effect. Complete output must be written and flushed
+before one response is read. The real CLI requires interactive stdin/stdout;
+run_session accepts trusted injected streams for host tests. There is no automatic
+approval or authentication. Service interpretation of plain-string approve is
+unchanged. Terminal lines are bounded to 256 content characters; oversized input
+stops the session without draining/reusing a remainder or approving a prefix.
+Unterminated EOF lines cancel too.
+
+Ordinary denials, approval-not-granted, and known no-mutation rejections return to
+the menu. Unexpected blocked execution, handler/review faults, audit failures, and
+terminal errors terminate. Menu EOF exits; approval EOF first passes through the
+service cancellation audit. KeyboardInterrupt keeps its type through control code,
+then the CLI reports its attached effect/audit information and exits 130. SystemExit
+also retains its type through control code; the CLI safely reports it and exits 1,
+never printing a potentially sensitive exit message. Other
+operational failures exit 1, CLI usage/noninteractive startup exits 2, normal exit
+is 0. Close failures cannot erase already known effects; cleanup during an earlier
+failure preserves that failure and reports the fixed cleanup-failure note when
+output remains available. No raw diagnostic text is printed. Output failure itself
+can prevent an error being displayed; the process still fails rather than retrying.
+
+Read results reflect live fake state; review remains a fixed snapshot. A successful
+status-changing update makes later mutations stale in that run. There is no baseline
+refresh, service reset, retry, rollback, log-based recovery, model adapter, network,
+concurrency, or dependency addition. The host provisions a trusted existing log
+parent; --audit-path is startup configuration only. Runtime logs belong in ignored
+directories. The unrelated pitch/speaker-guide artifacts remain outside this milestone.
+
 ## Verification and deferred choices
 
 Future tests must assert handler invocation counts and resulting sample state,
@@ -726,7 +806,9 @@ checks, record size, append ordering, poisoning, cleanup, and failure injection.
 Real service/executor integration checks counts and effects at issuance, start,
 and completion failures. The original 145 tests remain unchanged.
 
-CLI/raw proposal parsing and concrete human I/O remain deferred. UUID identifiers remain descriptive record data;
+Milestone 4B tests add bounded parsing, shared admission across both APIs, terminal
+review/input, one-lifetime state, safe rendering, and real JSONL failure gates.
+UUID identifiers remain descriptive record data;
 only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
 deferred until the deterministic boundary works. A future adapter may propose
 actions but may not auto-dispatch tools.
