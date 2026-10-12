@@ -1,6 +1,12 @@
 # Architectural Decisions
 
-This records the agreed direction for Controlled Agent's first MVP. Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed. Milestone 4B controller and local interactive CLI are implemented for review. Model/provider integration remains deferred. Earlier entries retain the scope of their original milestone; decision 19 records the current integration.
+This records the agreed direction for Controlled Agent's first MVP. Milestones
+2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C end-to-end
+verification passed; its documentation-only closure adds no architecture or runtime
+behavior. The [verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
+records the evidence and limits of the local demonstration. Model/provider
+integration remains deferred pending explicit authorization. Earlier entries
+retain the scope of their original milestone; decision 19 records the current integration.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 

@@ -4,8 +4,12 @@
 
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
-- Current milestone: Milestone 4B, controller and local interactive CLI, implemented
-  for review. Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed.
+- Current status: Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed.
+  Milestone 4C end-to-end verification has passed and is approved; its closure is
+  documentation only. The verified baseline has 228 passing Python 3.12.14 tests.
+  See the Milestone 4C summary in ARCHITECTURE.md for automated pseudo-terminal
+  evidence and limitations; it is not manual-human or production verification.
+  No subsequent milestone is authorized.
   Do not begin model/provider integration or expand the CLI until authorized. Do not add
   dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making

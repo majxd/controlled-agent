@@ -111,12 +111,16 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
-Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed: immutable contracts,
+Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed: immutable contracts,
 deterministic governance, trusted single-use authorization, synchronous human
-approval, executor, bounded fake tools, and JSONL audit persistence. Milestone 4B
-implements bounded proposal admission, controller orchestration, and a local
-interactive CLI for review,
-using only the Python standard library. The service retains the exact validated/resolved action, permits ALLOW
+approval, executor, bounded fake tools, JSONL audit persistence, bounded proposal
+admission, controller orchestration, and a local interactive CLI, using only the
+Python standard library. Milestone 4C end-to-end verification passed with 228 tests
+on Python 3.12.14 and automated pseudo-terminal smoke runs, not manual-human
+verification. The local prototype is ready for a scripted demonstration; the
+[verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
+records the observed state, audit evidence, and remaining limitations.
+The service retains the exact validated/resolved action, permits ALLOW
 issuance directly, and permits REQUIRE_APPROVAL issuance only after explicit
 human approval and mandatory audit writes. DENY remains terminal. Reserved action
 IDs cannot be reissued after failure, denial, cancellation, or consumption.

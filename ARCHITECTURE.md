@@ -2,14 +2,15 @@
 
 ## Scope and trust model
 
-The planned Python 3.12+ process hosts a CLI, a scripted proposal producer,
+The Python 3.12+ process hosts a CLI, a scripted proposal producer,
 deterministic governance, an executor, bounded demo tools, and a JSONL audit sink.
 These are logical responsibilities; this document does not require one package or class
-per component. Milestones 2A, 2B, 3A, 3B, and 3C are approved and committed.
-Milestone 4A is also approved and committed. Milestone 4B implements bounded
-proposal admission, controller, and local terminal I/O for review. Provider/model
-integration remains deferred. Earlier milestone sections describe their original
-increments; the 4B section below records the current end-to-end integration.
+per component. Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed.
+Milestone 4B provides bounded proposal admission, controller, and local terminal I/O.
+Milestone 4C end-to-end verification has passed, as summarized below. Provider/model
+integration remains deferred pending explicit authorization. Earlier milestone
+sections describe their original increments; the 4B section records the current
+end-to-end integration.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -744,8 +745,11 @@ unchanged. Terminal lines are bounded to 256 content characters; oversized input
 stops the session without draining/reusing a remainder or approving a prefix.
 Unterminated EOF lines cancel too.
 
-Ordinary denials, approval-not-granted, and known no-mutation rejections return to
-the menu. Unexpected blocked execution, handler/review faults, audit failures, and
+Ordinary denials, approval-not-granted, and normally completed and audited known
+no-mutation rejections return to the menu. Reentrancy or incomplete completion
+processing terminates even when the handler rejected without mutation; that effect
+classification remains separate from operational and audit failures.
+Unexpected blocked execution, handler/review faults, audit failures, and
 terminal errors terminate. Menu EOF exits; approval EOF first passes through the
 service cancellation audit. KeyboardInterrupt keeps its type through control code,
 then the CLI reports its attached effect/audit information and exits 130. SystemExit
@@ -766,7 +770,59 @@ directories. The unrelated pitch/speaker-guide artifacts remain outside this mil
 
 ## Verification and deferred choices
 
-Future tests must assert handler invocation counts and resulting sample state,
+### Milestone 4C end-to-end verification
+
+Verification passed on 2026-10-12 against committed Milestone 4B baseline
+`8697607b3fe25ae3a84d6903ace0326ed79897b0`. The complete Python 3.12.14 suite
+passed **228 tests** (`python3.12 -B -m unittest discover -s tests`). No production
+code, tests, or dependencies changed during 4C verification or documentation closure.
+
+The real `python3.12 -B -m controlled_agent --audit-path <temporary-path>` entry
+point was exercised through automated pseudo-terminal input. A separate observed
+`run_session` smoke run used injected streams and wrappers around the real fake
+handlers to inspect call counts, state, and consumed references. These were
+automated checks, not manual-human verification. Each run used isolated temporary
+JSONL files and one application lifetime for the following sequence:
+
+| Scenario | Result and observed behavior |
+| --- | --- |
+| Read WO-1001 | PASS: LOW/ALLOW; returned `open`. |
+| Decline an editable update | PASS: decline audited; no issuance or handler call. |
+| Approve an editable update | PASS: review/approval and required audits preceded execution; status became `closed`. |
+| Attempt protected WO-9001 update | PASS: HIGH/DENY; no review prompt, issuance, or dispatch. |
+| Approve another WO-1001 update | PASS: `STALE_BASELINE` rejection without mutation; authority remained consumed. |
+| Read WO-1001 again | PASS: returned live status `closed`; normal session exit was 0. |
+
+**Each main smoke run persisted 30 JSONL events across 6 distinct action IDs.**
+Checks matched event order, `demo_operator` caller and action-ID correlation,
+UTC timestamps, exact retained fields, the 4 KiB limit, and file mode 0600.
+Arguments, results, review text, raw responses, and internal execution references
+were absent from those logs. The observed run recorded two read calls and two
+update calls (one success, one stale rejection), with all four authorizations
+consumed. Final fake state was **WO-1001: closed; WO-9001: open**.
+
+Additional checks passed: six malformed host proposals produced correlated
+submission/DENY records with no handlers or rights; invalid menu input created no
+action; approval EOF and Ctrl-C persisted cancellation without issuance and exited
+0 and 130 respectively. A missing audit parent caused a sanitized failure and exit
+1 without creating the directory or retrying. The automated suite also verified
+mandatory audit failure gates, replay rejection, reentrancy termination, consumed
+authority, and accurate post-dispatch effects without automatic retry. Fault tests
+used temporary storage, not real user files. `git diff --check` passed, and the
+four unrelated pitch/speaker-guide artifacts remained unchanged and unstaged.
+
+This evidence supports a **local scripted demonstration**, not production readiness.
+There is no human authentication or proof that a person viewed the review; approval
+display uses a fixed snapshot with no external-state freshness guarantee. Fake
+effects and JSONL writes are not transactional, and logs are not tamper-resistant
+or execution authority. Flush/fsync does not provide absolute crash or power-loss
+durability. Concurrent operation, real integrations, and containment of malicious
+in-process code remain outside scope. No subsequent implementation is authorized
+by verification closure.
+
+### Ongoing regression coverage and deferred choices
+
+Tests must continue to assert handler invocation counts and resulting sample state,
 not merely decision labels. Cover all table rows, context-sensitive risk and
 decisions for the same tool, approval binding, hard-deny precedence,
 forged/reused references, attempted authorization reissuance, mutation after
@@ -810,5 +866,5 @@ Milestone 4B tests add bounded parsing, shared admission across both APIs, termi
 review/input, one-lifetime state, safe rendering, and real JSONL failure gates.
 UUID identifiers remain descriptive record data;
 only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
-deferred until the deterministic boundary works. A future adapter may propose
+deferred pending explicit authorization. A future adapter may propose
 actions but may not auto-dispatch tools.

@@ -1,6 +1,6 @@
 # Controlled Agent
 
-A small local MVP/prototype for controlled AI tool use. The planned application
+A small local MVP/prototype for controlled AI tool use. The application
 routes every tool action through an explicit deterministic control layer before
 execution.
 
@@ -12,8 +12,13 @@ when required.
 
 ## Status
 
-Milestones 2A, 2B, 3A, 3B, 3C, and 4A are approved and committed. Milestone 4B
-controller and local interactive CLI are implemented for review. Pure governance still returns
+Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C
+end-to-end verification passed on baseline `8697607b3fe25ae3a84d6903ace0326ed79897b0`:
+228 tests passed on Python 3.12.14, with automated pseudo-terminal smoke tests and
+observed fake-state/JSONL checks. The local prototype is ready for a scripted
+demonstration, not production deployment. See the
+[4C verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
+for evidence and limitations. Pure governance still returns
 `GovernanceResult` data. The host-only service calls governance itself and issues
 references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
 mandatory audit writes. The executor consumes each reference once and audits
@@ -25,9 +30,9 @@ Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
 records. Its references are identity-bound objects, distinct from auditable UUIDs.
 
-The planned MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
-and local JSONL auditing. Model/provider integration is deferred until the
-deterministic execution boundary works.
+The MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
+and local JSONL auditing. Model/provider integration remains deferred pending
+explicit authorization.
 
 Run all tests from the repository root with Python 3.12+:
 
@@ -132,7 +137,9 @@ One service, fixture, executor, and writer serve the entire menu session. After 
 approved status-changing update, reads show `closed` and later mutations may be
 rejected with `STALE_BASELINE`. The session never refreshes the review snapshot or
 resets action-ID tombstones. Governance denial and approval-not-granted return to
-the menu; known no-mutation rejections also allow another explicit selection.
+the menu; normally completed and audited no-mutation rejections also allow another
+explicit selection. Reentrancy or incomplete completion processing terminates the
+session while preserving the known no-mutation effect classification.
 Unexpected execution, review, terminal, and audit errors stop the run. Effects are
 reported separately from failed auditing; nothing is retried or claimed rolled back.
 Exit codes: 0 normal quit/EOF, 1 operational failure, 2 command-line usage or missing
