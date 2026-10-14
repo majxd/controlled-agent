@@ -24,15 +24,22 @@ references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
 mandatory audit writes. The executor consumes each reference once and audits
 execution start before calling its trusted handler. The new JSONL writer validates,
 appends, flushes, and fsyncs every record. The CLI connects a bounded scripted
-proposal source to the existing control boundary. LLM integration remains deferred. No third-party dependencies are required.
+proposal source to the existing control boundary. Milestone 5A has approved and
+documented the future LLM/provider integration architecture only: a future adapter
+must submit the existing untrusted proposal envelope through `Controller.submit`.
+Milestone 5B implementation has not started. No provider, API, dependency, runtime
+behavior, or CLI behavior has been added, and no third-party dependencies are
+required.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
 records. Its references are identity-bound objects, distinct from auditable UUIDs.
 
 The MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
-and local JSONL auditing. Model/provider integration remains deferred pending
-explicit authorization.
+and local JSONL auditing. Scripted Demo remains the default. Future provider output
+is untrusted: `no_action` and provider failures do not submit work, while a valid
+plain proposal still enters the existing controller/governance boundary. Managed
+provider experimentation remains unimplemented and requires separate authorization.
 
 Run all tests from the repository root with Python 3.12+:
 

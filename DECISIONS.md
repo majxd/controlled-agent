@@ -3,10 +3,11 @@
 This records the agreed direction for Controlled Agent's first MVP. Milestones
 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C end-to-end
 verification passed; its documentation-only closure adds no architecture or runtime
-behavior. The [verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
-records the evidence and limits of the local demonstration. Model/provider
-integration remains deferred pending explicit authorization. Earlier entries
-retain the scope of their original milestone; decision 19 records the current integration.
+behavior. Milestone 5A approves and documents a future LLM integration architecture
+without implementing it. The [verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
+records the evidence and limits of the local demonstration. Earlier entries retain
+the scope of their original milestone; decision 19 records the current scripted
+controller/CLI integration, and ADR-5A records the deferred provider boundary.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -406,3 +407,63 @@ refresh is introduced. Security remains an application interface boundary in one
 trusted sequential process. No model, network, concurrent processing, new dependencies,
 or persistence beyond JSONL. Runtime logs and the four unrelated presentation
 artifacts stay out of version control. All 184 prior tests remain intact.
+
+## 20. ADR-5A: Defer provider integration behind the existing controller boundary
+
+**Decision:** Milestone 5A approves the architecture for a future,
+provider-independent proposal adapter; it adds no runtime code, dependencies,
+provider credentials, API calls, CLI changes, or tests. The Scripted Demo remains
+the default proposal producer. A future adapter may use an offline Mock Provider
+and may optionally support one managed API provider, but every action-shaped result
+must enter only through the existing `Controller.submit(proposal)` boundary. The
+adapter must preserve the strict plain `tool_name`/`arguments` proposal envelope;
+it must not create a new trusted `ProposedAction` or `ActionRequest` authority.
+
+**Trust boundary:** Model and provider output are untrusted data. The adapter may
+provide public tool metadata and permitted synthetic industrial data to a provider,
+then return either `no_action` or a plain proposal to the controller. It may not
+issue approvals, authorize execution, invoke handlers, choose the trusted caller,
+select policy/risk/permissions, access internal authorization references, or bypass
+governance, human review, the executor, or the existing audit gates. Validly
+structured proposals for unknown tools or protected targets still reach existing
+deterministic governance and are rejected there. The controller remains responsible
+for its fresh host action ID, fixed caller, admission audit, parsing, governance,
+authorization lifecycle, and immediate executor handoff.
+
+**Failure and lifecycle rules:** An adapter-level `no_action` produces neither a
+controller submission nor a fabricated tool call. Invalid provider output, refusal,
+timeout, rate limit, and provider failure stop before submission; they do not create
+an action ID, authorization, execution audit event, or retry. There is no automatic
+provider fallback and no automatic retry, especially after any proposal has been
+submitted. One sequential session continues to own the same writer, authorization
+service, fixture, executor, and controller for its entire lifetime. Provider errors
+must not reset or recreate trusted state, clear tombstones, restore consumed
+references, or retry an uncertain effect. Execution JSONL remains an execution
+audit only; provider metrics and model-quality evaluation must be separate.
+
+**Evaluation posture:** Groq Free and GPT-OSS 20B are initial experimental
+candidates, not provider or production commitments. The current experimental budget
+is zero. Before any live managed API use, future work must validate actual quota,
+billing, privacy, and model support. Only synthetic industrial data and public tool
+metadata may be sent to a provider. Secrets, audit logs, private policy
+configuration, authorization references, and other internal authority must not be
+sent.
+
+**Alternatives considered:** Direct SDK or hosted-tool dispatch was rejected because
+it could bypass the control boundary. Giving a provider trusted action records,
+approval authority, or caller selection was rejected because it confuses untrusted
+proposal data with host authority. Adding automatic fallback/retry was rejected
+because it obscures provider failure and can repeat a submitted or uncertain effect.
+Selecting a managed provider now was rejected because no live budget, credentials,
+or provider assurance has been approved. Keeping only a scripted producer was also
+rejected as the long-term architecture because it would not specify how future
+provider proposals preserve the validated boundary.
+
+**Limitations and implementation deferral:** This decision does not establish
+commercial viability, production readiness, provider safety, quota availability,
+privacy compliance, or model quality. It introduces no Agent SDK, cloud deployment,
+industrial integration, new tool, dashboard, database, autonomous loop, or model
+selection. Milestones 5B and 5C remain unstarted and require separate authorization
+to implement and evaluate the adapter, including failure, no-action, lifecycle,
+policy-bypass, regression, and model-quality tests. The earlier 228 passing tests
+are a baseline, not verification evidence for future integration.

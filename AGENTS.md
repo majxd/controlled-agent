@@ -9,9 +9,9 @@
   documentation only. The verified baseline has 228 passing Python 3.12.14 tests.
   See the Milestone 4C summary in ARCHITECTURE.md for automated pseudo-terminal
   evidence and limitations; it is not manual-human or production verification.
-  No subsequent milestone is authorized.
-  Do not begin model/provider integration or expand the CLI until authorized. Do not add
-  dependencies or commit unless requested.
+  Milestone 5A is closed as documentation-only architecture approval. Milestone 5B
+  implementation and all provider/API integration remain unstarted and unauthorized.
+  Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
   precedence; document meaningful changes to existing decisions.
@@ -86,6 +86,17 @@
 - Treat proposals, model text, and tool output as untrusted data. Caller identity,
   permissions, protected-resource metadata, and approval evidence come from
   trusted application context, never from proposal claims.
+- Preserve ADR-5A for any future provider work: Scripted Demo remains the default;
+  a provider-independent adapter may emit only the existing plain
+  `tool_name`/`arguments` proposal envelope and must enter through
+  `Controller.submit`. Do not introduce a trusted provider action record, let a
+  provider select caller/policy/risk/approval, or expose handlers, credentials,
+  private policy configuration, audit logs, or authorization references to it.
+  `no_action`, invalid provider output, refusal, timeout, rate limit, and provider
+  failure must stop before submission. Never add automatic provider fallback or
+  retry, reset trusted session state after provider failure, or merge provider
+  metrics/model-quality evaluation into execution JSONL auditing. Design approval
+  is not implementation authorization: do not begin 5B/5C without explicit scope.
 - Default to denial for malformed requests, unknown tools or targets, absent
   permissions, and unresolved policy. A hard denial cannot become approval.
 - The executor accepts only an internal single-use authorization reference and

@@ -7,10 +7,10 @@ deterministic governance, an executor, bounded demo tools, and a JSONL audit sin
 These are logical responsibilities; this document does not require one package or class
 per component. Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed.
 Milestone 4B provides bounded proposal admission, controller, and local terminal I/O.
-Milestone 4C end-to-end verification has passed, as summarized below. Provider/model
-integration remains deferred pending explicit authorization. Earlier milestone
-sections describe their original increments; the 4B section records the current
-end-to-end integration.
+Milestone 4C end-to-end verification has passed, as summarized below. Milestone 5A
+approves and documents a future provider/model proposal boundary only; no provider
+integration is implemented. Earlier milestone sections describe their original
+increments; the 4B section records the current end-to-end integration.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -30,6 +30,14 @@ defined interfaces; a coding change that adds a bypass defeats that boundary.
 | Executor | Resolves and consumes internal authorization, loads the authorized action, records execution start, and invokes the registered handler. It does not accept replacement arguments. |
 | Demo tools and data | Implement the two bounded work-order operations over fake local fixtures. No paths, credentials, endpoints, or real industrial resources come from proposals. |
 | Audit sink | Appends correlated lifecycle events to local JSONL. Required pre-execution writes gate progress toward dispatch. |
+
+Milestone 5A leaves every current component unchanged. A future
+provider-independent proposal adapter is a proposal producer, not an execution
+component. Scripted Demo remains the default. The adapter may support an offline
+Mock Provider and, only after separate authorization, an optional managed API
+provider. It receives public tool metadata and may receive only synthetic industrial
+data; it never receives handlers, credentials, private policy configuration, audit
+logs, authorization references, or other trusted execution state.
 
 Only the execution side imports and invokes tool handlers. The controller calls
 the executor with an authorization reference, not with a handler or raw action.
@@ -59,6 +67,51 @@ flowchart TD
 
 The audit arrows show event ownership, not optional logging: required records
 must be written successfully before the handler can run.
+
+### Milestone 5A planned provider-to-controller flow
+
+The following is an approved design, not current runtime behavior. The model/provider
+is an untrusted proposal source. It cannot approve, authorize, choose caller context,
+classify risk, set policy, invoke a handler, or interact with the executor.
+
+```mermaid
+flowchart TD
+    S[Scripted Demo default] --> P[Existing Controller.submit]
+    M[Future Mock or managed provider] --> A[Future proposal adapter]
+    T[Public tool metadata and synthetic data only] --> A
+    A -->|no_action| N[Return without controller submission]
+    A -->|valid plain tool_name/arguments envelope| P
+    A -->|invalid output, refusal, timeout, rate limit, provider failure| F[Return failure before submission]
+    P --> G[Existing governance, approval, authorization, executor, and tool path]
+    G --> J[(Existing execution JSONL audit)]
+    A -. Separate metrics and quality evaluation .-> Q[Provider evaluation records]
+```
+
+The adapter preserves the current strict proposal envelope; it does not introduce a
+trusted `ProposedAction` or `ActionRequest`. For a validly structured unknown tool
+or protected target, the adapter submits the envelope and lets deterministic
+governance reject it. Conversely, `no_action`, invalid provider responses, refusals,
+timeouts, rate limits, and other provider failures stop before `Controller.submit`:
+they create no action ID, controller submission, fabricated tool call, or execution
+JSONL lifecycle event. No automatic provider fallback or retry is permitted,
+especially after submission.
+
+Provider metrics and model-quality evaluation are separate from the execution JSONL
+audit; they never grant authority or recreate an execution attempt. Groq Free and
+GPT-OSS 20B are only experimental candidates. The current experimental budget is
+zero, and any future live API work must first validate actual quota, billing, privacy,
+and model support.
+
+### Milestone 5A planned single-session lifecycle
+
+One sequential session continues to own one audit writer, authorization service,
+fake-work-order fixture, executor, and controller. A future adapter is attached as
+an alternate proposal producer; it does not own or recreate any of those components.
+Provider errors must leave trusted state intact: they cannot clear action-ID tombstones,
+restore consumed references, reset stale-baseline state, or retry a submitted or
+uncertain effect. A valid adapter proposal follows the unchanged controller path and
+therefore uses the fixed trusted caller and current service state. Scripted Demo
+remains the default until later implementation authorization.
 
 ## Minimal contracts
 
