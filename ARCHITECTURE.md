@@ -8,9 +8,11 @@ These are logical responsibilities; this document does not require one package o
 per component. Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed.
 Milestone 4B provides bounded proposal admission, controller, and local terminal I/O.
 Milestone 4C end-to-end verification has passed, as summarized below. Milestone 5A
-approves and documents a future provider/model proposal boundary only; no provider
-integration is implemented. Earlier milestone sections describe their original
-increments; the 4B section records the current end-to-end integration.
+approved and documented the provider/model proposal boundary. Milestone 5B.1
+implements its offline provider interface, Mock Provider, and structural adapter.
+The 4B section records the current scripted CLI integration; the 5B.1 section
+records the host-facing offline interface. No live provider or provider CLI wiring
+is implemented. Earlier milestone sections describe their original increments.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -70,7 +72,8 @@ must be written successfully before the handler can run.
 
 ### Milestone 5A planned provider-to-controller flow
 
-The following is an approved design, not current runtime behavior. The model/provider
+The following records the 5A design; 5B.1 implements only its offline interface,
+with host-controlled submission as described below. The model/provider
 is an untrusted proposal source. It cannot approve, authorize, choose caller context,
 classify risk, set policy, invoke a handler, or interact with the executor.
 
@@ -112,6 +115,80 @@ restore consumed references, reset stale-baseline state, or retry a submitted or
 uncertain effect. A valid adapter proposal follows the unchanged controller path and
 therefore uses the fixed trusted caller and current service state. Scripted Demo
 remains the default until later implementation authorization.
+
+### Milestone 5B.1 offline provider interface and Mock Provider
+
+`provider.py` defines the synchronous ProposalProvider protocol, immutable
+ProviderRequest, fixed ProviderFailure codes, and data-only ProposalAdapter.
+`mock_provider.py` supplies a simple configured response or failure. Module
+placement is for readability and supplies no security isolation. Neither module
+imports a controller, authorization service, executor, policy, audit sink, or handler.
+
+The trusted host supplies a plain prompt of 1–4096 characters containing only
+public/synthetic data and a tuple of existing immutable ToolDefinition descriptions.
+These checks do not detect embedded secrets; the host must curate content. Never
+provide ToolRules, caller context, private policy/resource metadata, credentials,
+audit logs, or authorization references. ProviderRequest is input data, not action
+validation or execution authority.
+
+ProposalAdapter.propose(request) calls the provider once. None alone means
+no_action; the string "no_action" is invalid output. Otherwise the adapter reuses
+parse_proposal to return a copied plain tool_name/arguments envelope. It neither
+creates an ActionRequest or UUID nor submits anything. Unknown tools, unknown
+targets, protected mutations, and invalid tool semantics remain for governance.
+Malformed output raises ProviderError(INVALID_OUTPUT). Refusal, timeout, rate
+limit, and unavailable errors use fixed codes. Unexpected ordinary exceptions
+become UNAVAILABLE, built-in TimeoutError becomes TIMEOUT, and interruptions
+propagate. Public messages contain fixed codes only. Original exception context
+can remain in private host diagnostics; never render or audit raw tracebacks.
+There is no wall-clock timeout here; transport timeout enforcement remains deferred.
+
+Only the trusted host submits a non-None proposal through its existing controller:
+
+```python
+from controlled_agent.demo import TOOLS
+from controlled_agent.mock_provider import MockProvider
+from controlled_agent.provider import ProposalAdapter, ProviderRequest
+
+request = ProviderRequest(
+    prompt="Read synthetic work order WO-1001.",
+    tools=tuple(rule.definition for rule in TOOLS.values()),
+)
+adapter = ProposalAdapter(MockProvider({
+    "tool_name": "get_work_order", "arguments": {"work_order_id": "WO-1001"},
+}))
+proposal = adapter.propose(request)
+if proposal is not None:
+    report = controller.submit(proposal)  # Host's existing per-session controller.
+```
+
+The host must handle a provider error without submitting, and honor terminal
+controller outcomes. It retains one writer/service/fixture/executor/controller
+throughout the sequential session. Provider failure never clears tombstones,
+restores consumed references, refreshes the review baseline, or retries an effect.
+No-action and provider failure create no submission, action ID, or execution
+JSONL lifecycle record. Provider metrics/model-quality records remain separate
+and unimplemented. Scripted Demo remains the CLI default.
+
+The basic MockProvider repeats its configured value on explicit calls; sequential
+failure/success scenarios use a test-only provider. Tests use a context-managed
+real temporary JsonlAuditWriter and read back records to verify action/caller
+correlation and submission, decision, approval, issuance, and execution ordering.
+They assert handler counts, fake state, admission state, no UUID creation before
+submission, immutable public inputs, copied output, hard denials, missing
+permissions, human approval/decline, sanitized failures, and interruptions.
+A failure after an approved mutation leaves consumed references, tombstones,
+persisted audit bytes, and stale-baseline state intact, with the queued response
+unused until a new explicit host call.
+
+Verification on 2026-10-18: the full suite passed 246 tests on Python 3.12.14
+with `python3 -B -m unittest discover -s tests`: the unchanged 228 baseline
+tests and 18 provider tests. These are automated offline interface/control-boundary
+checks, not live model-quality, manual-human, or production verification.
+
+This increment adds no live API, SDK, dependency, CLI expansion, automatic retry,
+fallback, autonomous loop, or session reset. Live provider/model quality, result
+feedback, conversation history, metrics, and transport behavior remain deferred.
 
 ## Minimal contracts
 
@@ -917,7 +994,7 @@ and completion failures. The original 145 tests remain unchanged.
 
 Milestone 4B tests add bounded parsing, shared admission across both APIs, terminal
 review/input, one-lifetime state, safe rendering, and real JSONL failure gates.
-UUID identifiers remain descriptive record data;
-only private registry membership supplies live authority. Provider, model, SDK, and model-loop integration remain
-deferred pending explicit authorization. A future adapter may propose
-actions but may not auto-dispatch tools.
+UUID identifiers remain descriptive record data; only private registry membership
+supplies live authority. Milestone 5B.1 adds the offline interface described above.
+Live provider, SDK, and model-loop integration remain deferred pending explicit
+authorization. The adapter returns proposal data and cannot dispatch tools.

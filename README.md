@@ -24,19 +24,27 @@ references after ALLOW or explicit human approval of REQUIRE_APPROVAL, with all
 mandatory audit writes. The executor consumes each reference once and audits
 execution start before calling its trusted handler. The new JSONL writer validates,
 appends, flushes, and fsyncs every record. The CLI connects a bounded scripted
-proposal source to the existing control boundary. Milestone 5A has approved and
-documented the future LLM/provider integration architecture only: a future adapter
-must submit the existing untrusted proposal envelope through `Controller.submit`.
-Milestone 5B implementation has not started. No provider, API, dependency, runtime
-behavior, or CLI behavior has been added, and no third-party dependencies are
-required.
+proposal source to the existing control boundary. Milestone 5A approved the
+provider architecture; Milestone 5B.1 implements the offline provider interface,
+immutable public request, structural adapter, and Mock Provider. The adapter
+returns a copied plain `tool_name`/`arguments` proposal or None. Only the trusted
+host submits a non-None result through its existing `Controller.submit`.
+None alone means no_action; the string "no_action" is invalid. Provider failures
+and malformed output stop before submission, with no action ID or execution-audit
+events. Scripted Demo remains the CLI default. No live API, credentials,
+dependency, or CLI expansion is added. See the
+[5B.1 interface and host example](ARCHITECTURE.md#milestone-5b1-offline-provider-interface-and-mock-provider).
+
+The reconciled 5B.1 suite passed 246 tests on Python 3.12.14 with `-B` on
+2026-10-18, including 18 provider tests. This verifies the offline interface and
+existing control boundary; live provider/model evaluation remains deferred.
 
 Constructing an `Authorization`, even with `USABLE` state and a UUID, grants no
 execution rights. The service checks its private registry, never caller-created
 records. Its references are identity-bound objects, distinct from auditable UUIDs.
 
 The MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
-and local JSONL auditing. Scripted Demo remains the default. Future provider output
+and local JSONL auditing. Scripted Demo remains the default. Provider output
 is untrusted: `no_action` and provider failures do not submit work, while a valid
 plain proposal still enters the existing controller/governance boundary. Managed
 provider experimentation remains unimplemented and requires separate authorization.

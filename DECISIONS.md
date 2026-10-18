@@ -7,7 +7,8 @@ behavior. Milestone 5A approves and documents a future LLM integration architect
 without implementing it. The [verification summary](ARCHITECTURE.md#milestone-4c-end-to-end-verification)
 records the evidence and limits of the local demonstration. Earlier entries retain
 the scope of their original milestone; decision 19 records the current scripted
-controller/CLI integration, and ADR-5A records the deferred provider boundary.
+controller/CLI integration, ADR-5A records the approved provider boundary, and
+decision 21 records the authorized offline 5B.1 implementation.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -463,7 +464,44 @@ provider proposals preserve the validated boundary.
 commercial viability, production readiness, provider safety, quota availability,
 privacy compliance, or model quality. It introduces no Agent SDK, cloud deployment,
 industrial integration, new tool, dashboard, database, autonomous loop, or model
-selection. Milestones 5B and 5C remain unstarted and require separate authorization
-to implement and evaluate the adapter, including failure, no-action, lifecycle,
-policy-bypass, regression, and model-quality tests. The earlier 228 passing tests
+selection. The remaining 5B scope and Milestone 5C require separate authorization
+for managed-provider work and model-quality evaluation. Offline lifecycle and
+policy-bypass coverage is included in 5B.1 below. The earlier 228 passing tests
 are a baseline, not verification evidence for future integration.
+
+## 21. Milestone 5B.1: Keep the offline provider interface data-only
+
+**Decision:** Implement an immutable ProviderRequest containing a bounded
+public/synthetic prompt and existing public ToolDefinition metadata, a synchronous
+ProposalProvider protocol, a structural ProposalAdapter, and a simple offline
+MockProvider. Reuse parse_proposal to return a copied plain tool_name/arguments
+envelope. None alone represents no_action; the string "no_action" is invalid.
+Fixed ProviderFailure codes distinguish invalid output, refusal, timeout, rate
+limit, and unavailability. Ordinary unexpected errors are sanitized; interruptions
+propagate. Neither request data nor failure codes grant authority.
+
+**Reconciliation rationale:** The adapter receives no controller or execution state.
+Only the trusted host submits a non-None result once through its existing
+Controller.submit and handles terminal reports. This keeps proposal production
+independent of orchestration without changing the validated core. Unknown tools,
+targets, argument claims, permissions, risk, and approval remain with governance.
+The basic mock stays stateless between calls apart from its configured value;
+test-only sequential providers verify unused responses after failure. A separate
+mock module is an organizational choice, not a security guarantee.
+
+**Consequences and evidence:** No-action and provider failures create no controller
+submission, action ID, or execution lifecycle audit. Real temporary JSONL integration
+tests read persisted records and check correlation/order, handler counts, actual
+state, admission state, approval binding, denial, sanitized errors, and interruption.
+Failure after mutation preserves consumed authority and stale state without retry,
+fallback, or session reset. This remains an interface boundary within trusted
+Python code, not a sandbox or proof of production readiness.
+
+The reconciled full suite passed 246 tests on Python 3.12.14 with bytecode writes
+disabled on 2026-10-18, including 18 provider tests and the unchanged baseline.
+
+**Scope:** 5B.1 alone is authorized. Core production modules, Scripted Demo, and
+CLI behavior are unchanged. No live API, Groq integration, dependency, credentials,
+autonomous loop, provider metrics, or model-quality evaluation is added. Live
+integration, transport timeouts, conversation history, and result feedback remain
+deferred. ADR-5A's historical design approval did not authorize these later items.
