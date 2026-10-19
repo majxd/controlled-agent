@@ -8,7 +8,8 @@ without implementing it. The [verification summary](ARCHITECTURE.md#milestone-4c
 records the evidence and limits of the local demonstration. Earlier entries retain
 the scope of their original milestone; decision 19 records the current scripted
 controller/CLI integration, ADR-5A records the approved provider boundary, and
-decision 21 records the authorized offline 5B.1 implementation.
+decision 21 records the authorized offline 5B.1 implementation, and decision 22
+records the separately authorized optional 5B.2 Groq provider and offline verification.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -500,8 +501,69 @@ Python code, not a sandbox or proof of production readiness.
 The reconciled full suite passed 246 tests on Python 3.12.14 with bytecode writes
 disabled on 2026-10-18, including 18 provider tests and the unchanged baseline.
 
-**Scope:** 5B.1 alone is authorized. Core production modules, Scripted Demo, and
+**Historical scope:** 5B.1 alone was authorized for this increment. Core production modules, Scripted Demo, and
 CLI behavior are unchanged. No live API, Groq integration, dependency, credentials,
 autonomous loop, provider metrics, or model-quality evaluation is added. Live
 integration, transport timeouts, conversation history, and result feedback remain
 deferred. ADR-5A's historical design approval did not authorize these later items.
+
+## 22. Milestone 5B.2: Optional Groq transport, unchanged data-only boundary
+
+**Decision:** Add one context-managed synchronous GroqProvider, its offline tests,
+and a pinned optional extra (`groq==1.7.0`, `httpx==0.28.1`). Default dependencies
+remain empty. The official SDK provides maintained request, error, timeout, and
+cleanup interfaces without adding agent execution machinery. Dependency imports
+are lazy; the Scripted Demo and Mock Provider remain dependency-free and unchanged.
+The experimental candidate is openai/gpt-oss-20b, not a production selection.
+
+**Contract:** Preserve ProviderRequest, ProposalProvider, ProposalAdapter, and
+Controller.submit without modification. Use one JSON-mode non-streaming completion,
+no registered tools, `tool_choice="none"`, `include_reasoning=False`,
+`reasoning_effort="low"`, and `max_completion_tokens=2048`; omit reasoning_format.
+Only exact proposal/no_action/refusal wire variants are accepted. Explicit wire
+no_action alone becomes None. Missing content, malformed/truncated output, or
+refusal is never silently converted to no_action. The trusted host alone submits
+a copied plain proposal; governance still owns all semantic and authority decisions.
+
+**Rationale and tradeoff:** JSON object mode avoids a dynamic provider-specific
+schema compiler or tool allowlist that would duplicate governance. It does not
+promise schema compliance, so strict local parsing remains mandatory. Groq also
+offers strict structured outputs for the candidate, but schema construction is
+not necessary for this bounded increment. No output repair or retry compensates
+for model errors. See [Groq structured outputs](https://console.groq.com/docs/structured-outputs)
+and [reasoning options](https://console.groq.com/docs/reasoning).
+
+**Transport and decoding:** Use only the documented raw-response interface and
+public read/close methods from the [official SDK](https://github.com/groq/groq-python).
+Both JSON layers reject duplicate keys, invalid Unicode, nonfinite numbers, deep
+nesting, prose, and trailing data. API null/empty metadata is accepted where harmless;
+actual tool calls are rejected. Exact-key rules apply to model-authored variants
+and proposals. Fixed failure codes replace raw diagnostics. SDK and transport
+retries are explicitly zero; redirects and ambient proxies are disabled. Finite
+phase timeouts are not a total deadline, and size limits apply only after buffering.
+These limits and exact mapping rules are recorded in the 5B.2 architecture section.
+
+**Secrets and ownership:** Trusted construction supplies the key, never a prompt,
+ProviderRequest, result, audit record, or user diagnostic. The provider owns and
+closes its SDK/HTTP client, including on failures; cleanup does not replace an
+existing interruption. It neither logs payloads nor changes application logging
+configuration. Unsafe SDK logging/custom-header environment settings and enabled
+debug loggers are refused; host configuration must remain fixed during a call.
+This protects the defined interface, not against arbitrary in-process code.
+
+**Evidence:** The unchanged 246-test baseline plus 24 new tests passed on Python
+3.12.14 with -B: 270 executed, zero skipped. Without site packages, 253 executed
+and passed and 17 SDK tests were skipped. Actual SDK/MockTransport tests block
+network/DNS, use dummy keys, assert one request and no retries, failure mapping,
+cleanup, strict decoding, and dependency-free operation. Persisted JSONL tests
+assert correlation, lifecycle, handler counts, state, admission state, consumed
+authority, and unused queued success after failure. No-action/failure never submits.
+
+**Remaining gate:** Live inference was neither performed nor authorized by this
+increment. A later zero-budget smoke test needs separate authorization and verified
+account tier/quota/spend controls, model access, and data settings. Check the actual
+account rather than assuming the public [rate-limit table](https://console.groq.com/docs/rate-limits)
+applies. Review [Groq data controls](https://console.groq.com/docs/your-data), including
+retention exceptions, ZDR settings, and retained usage metadata. Public/synthetic
+inputs only. No CLI expansion, hosted tools, streaming, agent loop, fallback,
+execution-core changes, model-quality claim, or production-readiness claim is made.

@@ -87,8 +87,10 @@ language, vector database, persistent agent memory, or multi-agent system.
 
 No unrestricted shell or filesystem tools, autonomous tool dispatch by an SDK,
 LLM-based governance decisions, parallel execution, automatic retries, durable
-approval recovery, or exactly-once execution guarantees. Model/provider
-integration and third-party dependencies remain outside the current milestone.
+approval recovery, or exactly-once execution guarantees. Milestone 5B.2 permits
+one optional Groq proposal provider and its isolated SDK dependencies, verified
+offline only. Live inference, provider CLI wiring, and model-quality evaluation
+remain outside the current milestone. Default dependencies remain empty.
 
 ## Security boundary and limitations
 
@@ -157,7 +159,15 @@ uses three fixed scripted choices, one service/fixture per session, and no direc
 handler path. Invalid menu choices create no action. Terminal review is flushed
 before one fresh response; EOF, oversized input, and interruption fail closed.
 Reports separate audit failure from completed/uncertain effects; raw exceptions
-and arbitrary results are not printed. Model/provider integration remains deferred.
+and arbitrary results are not printed. Milestone 5B.1 adds the immutable public
+ProviderRequest, data-only ProposalAdapter, and offline Mock Provider. Milestone
+5B.2 adds one optional synchronous Groq provider using experimental
+openai/gpt-oss-20b, without changing the execution core or scripted CLI. Only the
+host submits a copied non-None proposal through its existing Controller.submit.
+Invalid output, refusal, timeout, rate limit, and unavailability create no action
+ID or execution lifecycle records and never reset session state. There is no
+retry, fallback, hosted tool, streaming, or agent loop. Offline SDK tests do not
+establish live model compatibility, account quota, privacy settings, or quality.
 Tests inject terminal streams and storage failures and use real temporary JSONL to
 verify handler counts, state, correlation, and failure paths. Crash durability,
 concurrent writers, authentication, and arbitrary malicious Python containment are

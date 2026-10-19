@@ -31,8 +31,8 @@ returns a copied plain `tool_name`/`arguments` proposal or None. Only the truste
 host submits a non-None result through its existing `Controller.submit`.
 None alone means no_action; the string "no_action" is invalid. Provider failures
 and malformed output stop before submission, with no action ID or execution-audit
-events. Scripted Demo remains the CLI default. No live API, credentials,
-dependency, or CLI expansion is added. See the
+events. Scripted Demo remains the CLI default. That offline 5B.1 increment added
+no live API, credentials, dependency, or CLI expansion. See the
 [5B.1 interface and host example](ARCHITECTURE.md#milestone-5b1-offline-provider-interface-and-mock-provider).
 
 The reconciled 5B.1 suite passed 246 tests on Python 3.12.14 with `-B` on
@@ -46,8 +46,47 @@ records. Its references are identity-bound objects, distinct from auditable UUID
 The MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
 and local JSONL auditing. Scripted Demo remains the default. Provider output
 is untrusted: `no_action` and provider failures do not submit work, while a valid
-plain proposal still enters the existing controller/governance boundary. Managed
-provider experimentation remains unimplemented and requires separate authorization.
+plain proposal still enters the existing controller/governance boundary. Milestone
+5B.2 now implements an optional one-shot Groq provider, verified offline only.
+Live inference and provider CLI wiring still require separate authorization.
+
+## Optional Groq provider (5B.2, offline-verified)
+
+`controlled_agent.groq_provider.GroqProvider` implements the same proposal protocol
+using experimental `openai/gpt-oss-20b`; this is not a production model commitment.
+It returns a copied plain proposal or None to the existing adapter. Only trusted
+host code submits non-None results through its existing controller. No core module,
+scripted CLI behavior, hosted tool, automatic dispatch, streaming, fallback, retry,
+or agent loop is added. Failure and no_action leave session state and execution
+audit untouched. The [5B.2 contract and limitations](ARCHITECTURE.md#milestone-5b2-optional-one-shot-groq-provider)
+describe strict decoding, fixed errors, timeouts, and owned-client cleanup.
+
+Default dependencies remain empty. To prepare an isolated environment for offline
+SDK tests, install the reviewed optional versions there (no project install needed):
+
+```sh
+python3.12 -m venv /trusted/temporary/5b2-env
+/trusted/temporary/5b2-env/bin/python -m pip install 'groq==1.7.0' 'httpx==0.28.1'
+/trusted/temporary/5b2-env/bin/python -B -m unittest discover -s tests -v
+```
+
+The same pins are declared as the `groq` optional extra in pyproject.toml. The
+provider imports dependencies lazily; no key is needed for these tests. All SDK
+tests use dummy keys, MockTransport, and blocked sockets/DNS. Python 3.12.14 with
+`-B`: **270 executed/passed, 0 skipped**. With `-B -S` (no site packages):
+**253 executed/passed, 17 SDK tests skipped**, 270 discovered. The prior 246 tests
+remain unchanged. No live inference or real credentials were used.
+
+Trusted callers must use the provider as a context manager or close it explicitly.
+Keys are explicit host configuration, never public request data. Do not enable
+SDK debug logging or expose raw exceptions; the provider refuses unsafe logging
+configuration without changing application-wide logging. Transport timeouts are
+finite phase limits, not a total wall-clock deadline; response size limits apply
+after buffering, not while bytes arrive. Account tier/quota, actual model access,
+zero-spend controls, and data-retention/ZDR settings remain unverified prerequisites
+for any separately authorized live smoke test. See [decision 22](DECISIONS.md#22-milestone-5b2-optional-groq-transport-unchanged-data-only-boundary).
+
+## Tests and module boundaries
 
 Run all tests from the repository root with Python 3.12+:
 

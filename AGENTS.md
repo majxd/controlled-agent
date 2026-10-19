@@ -11,7 +11,9 @@
   evidence and limitations; it is not manual-human or production verification.
   Milestone 5A is closed as documentation-only architecture approval. Milestone 5B.1
   implements the authorized offline provider interface, Mock Provider, and structural
-  adapter. Managed API integration and the remaining 5B/5C scope remain unauthorized.
+  adapter. Milestone 5B.2 adds an explicitly authorized optional Groq provider,
+  verified offline with the actual SDK and blocked network/DNS. Live inference,
+  provider CLI wiring, and the remaining 5B/5C scope remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -100,7 +102,17 @@
   failure must stop before submission. Never add automatic provider fallback or
   retry, reset trusted session state after provider failure, or merge provider
   metrics/model-quality evaluation into execution JSONL auditing. Design approval
-  is not implementation authorization: do not expand beyond 5B.1 without explicit scope.
+  is not implementation authorization: do not expand beyond the authorized 5B.2
+  one-shot provider without explicit scope.
+- GroqProvider owns its SDK/HTTP client and closes it deterministically. Preserve
+  the optional dependency boundary and empty default dependencies. Use the public
+  raw-response API, strict bounded decoding, zero SDK/transport retries, finite
+  phase timeouts, and no redirects. Do not repair output or extract JSON from prose.
+  Only exact wire no_action maps to None; missing/truncated content is failure.
+  Credentials are trusted constructor configuration only, never prompt/request
+  data, proposal output, audit data, or public diagnostics. Do not enable SDK debug
+  logging or modify application logging configuration. Tests use dummy credentials,
+  MockTransport, and blocked network/DNS; never run live inference implicitly.
 - Default to denial for malformed requests, unknown tools or targets, absent
   permissions, and unresolved policy. A hard denial cannot become approval.
 - The executor accepts only an internal single-use authorization reference and

@@ -5,3 +5,6 @@ description = "A local prototype for explicitly governed agent actions."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
+
+[project.optional-dependencies]
+groq = ["groq==1.7.0", "httpx==0.28.1"]

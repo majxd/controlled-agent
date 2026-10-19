@@ -10,9 +10,10 @@ Milestone 4B provides bounded proposal admission, controller, and local terminal
 Milestone 4C end-to-end verification has passed, as summarized below. Milestone 5A
 approved and documented the provider/model proposal boundary. Milestone 5B.1
 implements its offline provider interface, Mock Provider, and structural adapter.
+Milestone 5B.2 adds an optional Groq provider with offline SDK/transport verification.
 The 4B section records the current scripted CLI integration; the 5B.1 section
-records the host-facing offline interface. No live provider or provider CLI wiring
-is implemented. Earlier milestone sections describe their original increments.
+records the host-facing interface. No live inference or provider CLI wiring has
+been performed. Earlier milestone sections describe their original increments.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -92,7 +93,7 @@ flowchart TD
 
 The adapter preserves the current strict proposal envelope; it does not introduce a
 trusted `ProposedAction` or `ActionRequest`. For a validly structured unknown tool
-or protected target, the adapter submits the envelope and lets deterministic
+or protected target, the host submits the adapter's envelope and lets deterministic
 governance reject it. Conversely, `no_action`, invalid provider responses, refusals,
 timeouts, rate limits, and other provider failures stop before `Controller.submit`:
 they create no action ID, controller submission, fabricated tool call, or execution
@@ -141,7 +142,8 @@ limit, and unavailable errors use fixed codes. Unexpected ordinary exceptions
 become UNAVAILABLE, built-in TimeoutError becomes TIMEOUT, and interruptions
 propagate. Public messages contain fixed codes only. Original exception context
 can remain in private host diagnostics; never render or audit raw tracebacks.
-There is no wall-clock timeout here; transport timeout enforcement remains deferred.
+The adapter has no wall-clock timeout. The optional 5B.2 provider below adds finite
+transport phase timeouts, not a total deadline.
 
 Only the trusted host submits a non-None proposal through its existing controller:
 
@@ -186,9 +188,113 @@ with `python3 -B -m unittest discover -s tests`: the unchanged 228 baseline
 tests and 18 provider tests. These are automated offline interface/control-boundary
 checks, not live model-quality, manual-human, or production verification.
 
-This increment adds no live API, SDK, dependency, CLI expansion, automatic retry,
-fallback, autonomous loop, or session reset. Live provider/model quality, result
-feedback, conversation history, metrics, and transport behavior remain deferred.
+This historical 5B.1 increment added no live API, SDK, dependency, CLI expansion,
+automatic retry, fallback, autonomous loop, or session reset. The separately
+authorized 5B.2 increment below adds only the optional provider/transport layer.
+
+### Milestone 5B.2 optional one-shot Groq provider
+
+`groq_provider.py` implements the existing synchronous ProposalProvider protocol.
+It receives the unchanged ProviderRequest and returns a copied plain proposal or
+None to the unchanged data-only ProposalAdapter. Only the trusted host submits
+non-None output through its existing Controller.submit. It receives no controller,
+caller, policy, permissions, protected-resource metadata, audit log, authorization,
+handler, or session state. Public tool descriptions and synthetic prompts are the
+only model inputs; curation, not structural validation, keeps secrets out of text.
+
+The fixed experimental model is `openai/gpt-oss-20b`, not a production commitment.
+One non-streaming chat completion uses JSON object mode, `n=1`,
+`tool_choice="none"`, `include_reasoning=False`, `reasoning_effort="low"`, and
+`max_completion_tokens=2048`. It sends no `reasoning_format`, tool registrations,
+hosted tools, conversation history, feedback, or model-selected configuration.
+Messages consist of a fixed wire contract plus public ToolDefinition metadata in
+the system message and the synthetic prompt in the user message. Their serialized
+UTF-8 size is capped at 32 KiB. Unknown tools/targets and flat argument claims remain
+untrusted inputs for governance; provider-side decoding never decides semantics,
+permission, policy, risk, or approval.
+
+The entire model-authored content must be exactly one of:
+
+```json
+{"type":"proposal","proposal":{"tool_name":"get_work_order","arguments":{"work_order_id":"WO-1001"}}}
+{"type":"no_action"}
+{"type":"refusal"}
+```
+
+These are three alternatives, not a multi-record response. Keys are exact for
+each variant and the proposal envelope. Only explicit wire no_action returns None;
+the string "no_action", JSON null, empty/missing content, and failure never do.
+Refusal produces REFUSAL. Proposal decoding reuses the existing 4 KiB bounded,
+flat-scalar parse_proposal contract, copying its result. No repair, prose extraction,
+fallback, or automatic retry is performed.
+
+The documented SDK `chat.completions.with_raw_response.create` and response
+`read()`/`close()` methods preserve the raw bytes for local parsing; SDK model
+coercion and its ordinary JSON parser are not used. The response must have JSON
+Content-Type, an object with exactly one choice at integer index zero, an assistant
+message, and finish_reason `stop`. Explicit refusal or `content_filter` stops as
+REFUSAL; length/missing/unknown finish reasons are INVALID_OUTPUT. Actual tool_calls,
+function_call, executed_tools, MCP tool lists, nonempty reasoning, or annotations
+are rejected. Documented absent/null/empty metadata is accepted where harmless;
+API usage/ID metadata is ignored, not returned or audited. Outer API metadata is
+not subject to the exact-key wire rule. Duplicate keys (including escaped aliases),
+invalid UTF-8 or escaped surrogates, nonfinite/overflow numbers, excessive nesting
+(over 16 containers), malformed JSON, and trailing documents are rejected at both
+layers. Raw response and content limits are respectively 64 KiB and 8 KiB.
+
+All response-size bounds apply **after buffering**, including SDK eager reads and
+HTTP decompression; they are not transport memory-exhaustion protection. Phase
+timeouts are connect=5s, read=20s, write=10s, pool=5s; these are **not a total
+wall-clock deadline**. SDK max_retries and HTTPTransport retries are zero. Redirects
+are disabled, the HTTPS endpoint is fixed, TLS verification is enabled, and HTTPX
+trust_env is false (no ambient proxy configuration). The host supplies an explicit
+nonempty API key; there is no environment credential lookup. Injected transport is
+trusted test wiring, not model-selected configuration or a security sandbox.
+
+GroqProvider owns the SDK/client/transport, supports `with`, and closes even after
+failures. Close is idempotent and terminal; it never reopens a failed session.
+Cleanup errors are sanitized and do not mask an existing exception/interruption.
+APITimeoutError and HTTP 408 map to TIMEOUT; 429 to RATE_LIMIT; explicit refusal to
+REFUSAL; invalid successful output to INVALID_OUTPUT; connection, other HTTP/SDK,
+configuration, missing-dependency, and cleanup failures to UNAVAILABLE.
+KeyboardInterrupt/SystemExit propagate. Fixed public codes contain no provider
+bodies or raw exception text. Original exception context can remain private in
+Python; hosts must never expose diagnostic tracebacks to users or execution audit.
+
+The module does not log or alter application logging. It rejects the presence of
+GROQ_LOG (which can configure logging at SDK import) and GROQ_CUSTOM_HEADERS before
+import/construction, without reading their values. It refuses DEBUG-enabled Groq,
+HTTPX, or HTTPCore loggers and descendants at construction and before requests.
+Trusted host logging/environment configuration must remain fixed during the
+synchronous call; this is not isolation from concurrent in-process mutation.
+Credentials remain solely in trusted provider/HTTP configuration, never messages,
+ProviderRequest, proposal results, execution audit, or public failure diagnostics.
+
+The official SDK and HTTPX are pinned in the optional `groq` extra; base dependencies
+stay empty, imports are lazy, and Scripted Demo/Mock usage needs neither package.
+The maintenance benefit is the maintained transport/error API, without agent
+dispatch machinery. Pins require review on upgrades; transitive versions are not
+a lockfile. No application packaging or CLI behavior changes were added.
+
+Offline verification on Python 3.12.14 with `-B`: 270 executed, 0 skipped, all passed
+with Groq 1.7.0 and HTTPX 0.28.1. With `-S` (site packages unavailable), 253 executed
+and passed, 17 optional-SDK tests skipped, 270 discovered. The 246-test 5B.1 baseline
+is unchanged. New tests use the actual SDK and MockTransport with blocked sockets
+and DNS and dummy keys. They check request parameters, one HTTP attempt, queued
+success unused after failure, failure mapping, decoding, cleanup, no unsafe logging,
+and dependency-free imports. Real temporary JSONL is read back for action/caller
+correlation and lifecycle order; handler counts, approval, denial, state, tombstones,
+and consumed authority are checked. Failure/no_action creates no submission, UUID,
+or lifecycle records. Failure after a mutation preserves stale-baseline behavior.
+
+No live request, actual account, credential, billing, model quality, or production
+behavior was verified. A separately authorized zero-budget live smoke test requires
+checking the actual account tier/quota and spend controls, current model availability
+and permissions, and account data-retention/ZDR controls first. Public advertised
+limits do not prove an account's entitlement or zero cost. Retention exceptions and
+usage metadata must be reviewed; no real industrial or confidential inputs are
+permitted. Result feedback, metrics, loops, fallback, and provider CLI wiring remain
+deferred. See decision 22 for official references and rationale.
 
 ## Minimal contracts
 
@@ -996,5 +1102,6 @@ Milestone 4B tests add bounded parsing, shared admission across both APIs, termi
 review/input, one-lifetime state, safe rendering, and real JSONL failure gates.
 UUID identifiers remain descriptive record data; only private registry membership
 supplies live authority. Milestone 5B.1 adds the offline interface described above.
-Live provider, SDK, and model-loop integration remain deferred pending explicit
+Milestone 5B.2 adds the optional SDK provider and offline tests described above.
+Live inference and model-loop integration remain deferred pending explicit
 authorization. The adapter returns proposal data and cannot dispatch tools.
