@@ -10,6 +10,7 @@ the scope of their original milestone; decision 19 records the current scripted
 controller/CLI integration, ADR-5A records the approved provider boundary, and
 decision 21 records the authorized offline 5B.1 implementation, and decision 22
 records the separately authorized optional 5B.2 Groq provider and offline verification.
+Decision 23 records the authorized 5B.3 programmatic host handoff and stop policy.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -567,3 +568,54 @@ applies. Review [Groq data controls](https://console.groq.com/docs/your-data), i
 retention exceptions, ZDR settings, and retained usage metadata. Public/synthetic
 inputs only. No CLI expansion, hosted tools, streaming, agent loop, fallback,
 execution-core changes, model-quality claim, or production-readiness claim is made.
+
+## 23. Milestone 5B.3: Borrow existing components and retain host stop state
+
+**Decision:** Add a small ProviderHost with run_once(ProviderRequest) returning
+the existing ControllerReport unchanged or None for no_action. It accepts the
+existing Controller and ProposalAdapter, calls the adapter once per explicit
+invocation, and submits a non-None proposal once. It neither produces authority
+nor changes the provider, adapter, core, CLI, or dependencies. The caller owns the
+same session resources and provider cleanup throughout; no reconstruction occurs.
+
+**Why a wrapper:** Existing tests already demonstrated the handoff, but no runtime
+host component retained stop state. ControllerReport.terminal is a signal to the
+host, not a latch inside Controller. A stateless helper would leave every caller
+to reinvent that lifecycle check. No new result record, registry, dispatcher,
+provider abstraction, SDK import, or resource factory is needed.
+
+**Conservative lifetime policy:** ProviderError, terminal reports, interruptions,
+unexpected errors, and same-host reentry permanently stop the wrapper. Calls after
+stopping raise dedicated ProviderHostStopped(`provider_host_stopped`), never None.
+No-action and nonterminal reports permit another explicit call, not an automatic
+loop or retry. Provider-error stopping applies only to this host; the adapter's
+existing contract and tests are unchanged. No reset/resume, fallback, or replacing
+the stopped wrapper to recover a failed session is supported.
+
+**Reentry and effects:** Reject a nested run_once before invoking either collaborator
+and latch stopped, using ProviderHostReentry(`provider_host_reentry`). After proposal
+production, recheck stopped before submission or returning None, even if the
+provider swallowed the rejection. An uncaught nested error can instead emerge
+as the adapter's existing sanitized ProviderError. Once controller submission has
+started, preserve the actual report or original exception with its attached report.
+A swallowed callback rejection may allow the original authorized action to finish;
+return that report unchanged and keep the host stopped even if report.terminal is
+False. This does not cancel the core, restore consumed authority, or roll back
+effects. The existing service/executor guards are not modified or replaced.
+
+**Scope and evidence:** Seven files only: provider_host.py, its new test module,
+and the five project documents. Existing tests remain unchanged. The full suite
+on Python 3.12.14 with -B passed 292 tests with zero skipped, using the unchanged
+Groq 1.7.0 / HTTPX 0.28.1 environment. With -B -S, 274 passed and 18 SDK tests
+were skipped. New tests focus on handoff counts, stop/reentry behavior, unchanged
+reports/exceptions, real JSONL correlation and lifecycle, actual handler/state
+effects, retained admission/consumption state, and unused queued responses. One
+optional SDK/MockTransport integration blocks network/DNS and uses a dummy key.
+No live inference or credential access was performed. The earlier user-reported
+manual connectivity/decoding smoke test is separate, not end-to-end live evidence.
+
+**Limitations:** Sequential use only; no locks or concurrency support. Stop state
+is application lifecycle data, not authorization or a sandbox against in-process
+bypasses. Programmatic integration adds no CLI mode, prompt/key input, rendering,
+automatic feedback, metrics, or agent loop. Scripted Demo remains the default;
+further live execution and any provider CLI changes need separate approval.

@@ -11,6 +11,8 @@ Milestone 4C end-to-end verification has passed, as summarized below. Milestone 
 approved and documented the provider/model proposal boundary. Milestone 5B.1
 implements its offline provider interface, Mock Provider, and structural adapter.
 Milestone 5B.2 adds an optional Groq provider with offline SDK/transport verification.
+Milestone 5B.3 adds a small sequential ProviderHost around the existing controller
+and adapter, with no changes to the execution core or scripted CLI.
 The 4B section records the current scripted CLI integration; the 5B.1 section
 records the host-facing interface. Provider CLI wiring remains unimplemented;
 later manual live-smoke evidence is recorded in the 5B.2 section below.
@@ -314,6 +316,80 @@ data-control enforcement, or production readiness. This record documents the
 user's observation; no inference was rerun and no credentials were accessed to
 prepare it. The automated test results above are historical and were not rerun
 for this documentation-only update. Further live work requires separate approval.
+
+### Milestone 5B.3 sequential provider-to-host integration
+
+`provider_host.py` supplies ProviderHost(controller=existing_controller,
+adapter=existing_adapter). It borrows these exact existing component types; their
+constructor checks do not confer execution authority. The application owner still
+constructs one writer/service/fixture/executor/controller for the session and owns
+provider context management/cleanup. The host never creates or closes these
+resources, accesses credentials, or passes trusted execution objects to a provider.
+It adds no SDK dependency, terminal I/O, audit writer, handler access, policy
+evaluation, action IDs, or admission registry. Scripted Demo remains the default;
+the CLI and existing provider/adapter/core implementations are unchanged.
+
+Each explicit run_once(public_request) invokes ProposalAdapter.propose once, then
+submits a non-None proposal once through the existing Controller.submit. None is
+returned only for a successful no_action. Unknown tools/targets and argument claims
+remain for governance; caller, permissions, policy, risk, approval, authorization,
+and execution retain their existing owners. Reports/results are not automatically
+rendered, audited again, fed back to the provider, or used as authority. Once per
+explicit invocation is not deduplication or an exactly-once delivery guarantee.
+
+| Event | Return/exception and lifetime |
+| --- | --- |
+| Adapter returns None | Return None without submission; another explicit call is permitted. |
+| Controller returns nonterminal report | Return the same report object; another explicit call is permitted unless host reentry was detected. |
+| Controller returns terminal report | Return the same report and permanently stop this host. |
+| ProviderError, interruption, or unexpected error | Permanently stop and re-raise the same exception received by the host, preserving any attached controller_report. |
+| Call while already stopped | Raise ProviderHostStopped with fixed `provider_host_stopped`; invoke neither collaborator. |
+| Same-host nested call | Permanently stop and raise ProviderHostReentry with fixed `provider_host_reentry` before invoking either collaborator. |
+
+The small wrapper is needed to retain stop state between explicit calls: the
+Controller reports terminal outcomes but does not close itself. Outcome names
+alone are insufficient; an audited rejection can be nonterminal while failed
+completion processing can make the same outcome terminal. ProviderError stopping
+is a conservative policy of this new host, not a change to the adapter contract.
+Earlier direct-adapter tests permitting a later explicit call after provider
+failure remain unchanged. No reset/resume or replacement-wrapper recovery is
+provided. The trusted owner must not bypass stopping via direct calls or a new host.
+
+Two private booleans track running and permanently stopped status. The public
+read-only stopped property is lifetime information, not permission. A nested call
+sets stopped before raising. After proposal production, the outer call checks it
+before interpreting even None, preventing submission if the provider swallowed
+the rejection. The outer call then raises ProviderHostReentry. If the provider
+does not catch the nested error, the unchanged adapter may sanitize it into
+ProviderError(UNAVAILABLE); the host propagates that error and remains stopped.
+
+After Controller.submit begins, no host cancellation is injected into the core.
+A review/audit/handler callback can swallow a reentry rejection and the original
+action may still complete under normal governance. The host returns the original
+ControllerReport unchanged, including actual effects and terminal=False if that
+is what the core reports, while host.stopped remains True. If the controller raises,
+its original exception and attached report propagate without replacement. Never
+claim rollback or infer no dispatch from the host's stopped state. Callers must
+honor host.stopped as well as reports and render only safe bounded outcomes, never
+raw exception diagnostics. Resource cleanup must preserve prior effects/errors.
+
+This is sequential synchronous wiring, not thread safety or an authority guard.
+There are no locks, parallel dispatch, retries, fallback, or autonomous loops.
+Existing service/executor guards continue to govern direct calls into the core;
+the host guard only prevents another host operation. In-process malicious code
+and a caller intentionally bypassing the wrapper remain outside the threat model.
+
+Verification: Python 3.12.14 with `-B`, Groq 1.7.0 and HTTPX 0.28.1: 292 executed
+and passed, 0 skipped. With `-B -S`: 274 executed and passed, 18 skipped, 292
+discovered. The 270 existing tests are unchanged; 22 new tests focus on host
+handoff/lifetime rather than repeating SDK decoding matrices. They read real
+temporary JSONL and check action/caller correlation, lifecycle order, approval,
+denial, handler counts, state, consumed authority, tombstones, and unused queued
+responses. They cover stopped misuse, swallowed and uncaught reentry before/after
+submission, preservation of original reports/interruption objects, and audit
+failure effects. One optional actual-SDK/MockTransport test uses dummy credentials
+with blocked network/DNS and verifies caller-owned cleanup. No live inference,
+credential access, dependency change, or provider CLI integration was performed.
 
 ## Minimal contracts
 
@@ -1122,5 +1198,6 @@ review/input, one-lifetime state, safe rendering, and real JSONL failure gates.
 UUID identifiers remain descriptive record data; only private registry membership
 supplies live authority. Milestone 5B.1 adds the offline interface described above.
 Milestone 5B.2 adds the optional SDK provider and offline tests described above.
-Live inference and model-loop integration remain deferred pending explicit
+Milestone 5B.3 adds the sequential host handoff and permanent-stop tests above.
+Further live inference and model-loop integration remain deferred pending explicit
 authorization. The adapter returns proposal data and cannot dispatch tools.

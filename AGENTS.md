@@ -12,8 +12,11 @@
   Milestone 5A is closed as documentation-only architecture approval. Milestone 5B.1
   implements the authorized offline provider interface, Mock Provider, and structural
   adapter. Milestone 5B.2 adds an explicitly authorized optional Groq provider,
-  verified offline with the actual SDK and blocked network/DNS. Live inference,
-  provider CLI wiring, and the remaining 5B/5C scope remain unauthorized.
+  verified offline with the actual SDK and blocked network/DNS. Milestone 5B.3
+  adds the authorized sequential ProviderHost handoff and permanent stopping.
+  The separately reported 2026-10-19 live smoke test verified connectivity and
+  proposal decoding only. Further live inference, provider CLI wiring, and the
+  remaining 5B/5C scope remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -102,8 +105,20 @@
   failure must stop before submission. Never add automatic provider fallback or
   retry, reset trusted session state after provider failure, or merge provider
   metrics/model-quality evaluation into execution JSONL auditing. Design approval
-  is not implementation authorization: do not expand beyond the authorized 5B.2
-  one-shot provider without explicit scope.
+  is not implementation authorization: do not expand beyond the authorized 5B.3
+  programmatic host integration without explicit scope.
+- ProviderHost borrows the existing controller and adapter; the caller still owns
+  all resources and provider cleanup. Each explicit run_once calls the adapter once
+  and submits non-None output once. None means only no_action, never stopped-host
+  misuse. ProviderHostStopped has a fixed diagnostic. Provider failures, terminal
+  controller reports, interruptions, unexpected errors, and same-host reentry stop
+  the host permanently. Reject nested calls before either collaborator. Swallowed
+  reentry during proposal generation must prevent outer submission. Once submission
+  has begun, preserve the original controller report or exception and attached
+  report; stopping the host does not cancel or roll back that action. A callback
+  may swallow reentry and the core may return a nonterminal success: the host still
+  stays stopped. Do not add locks, concurrency, reset/resume, retries, fallback, or
+  another admission registry, or replace the stopped wrapper to bypass its policy.
 - GroqProvider owns its SDK/HTTP client and closes it deterministically. Preserve
   the optional dependency boundary and empty default dependencies. Use the public
   raw-response API, strict bounded decoding, zero SDK/transport retries, finite

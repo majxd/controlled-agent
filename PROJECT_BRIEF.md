@@ -88,9 +88,10 @@ language, vector database, persistent agent memory, or multi-agent system.
 No unrestricted shell or filesystem tools, autonomous tool dispatch by an SDK,
 LLM-based governance decisions, parallel execution, automatic retries, durable
 approval recovery, or exactly-once execution guarantees. Milestone 5B.2 permits
-one optional Groq proposal provider and its isolated SDK dependencies, verified
-offline only. Live inference, provider CLI wiring, and model-quality evaluation
-remain outside the current milestone. Default dependencies remain empty.
+one optional Groq proposal provider and its isolated SDK dependencies. Milestone
+5B.3 adds only programmatic provider-to-host wiring and offline verification.
+Further live inference, provider CLI wiring, and model-quality evaluation remain
+outside the current milestone. Default dependencies remain empty.
 
 ## Security boundary and limitations
 
@@ -168,6 +169,20 @@ Invalid output, refusal, timeout, rate limit, and unavailability create no actio
 ID or execution lifecycle records and never reset session state. There is no
 retry, fallback, hosted tool, streaming, or agent loop. Offline SDK tests do not
 establish live model compatibility, account quota, privacy settings, or quality.
+The user-reported single live request on 2026-10-19 verified connectivity and
+proposal decoding only, without submission, execution, or audit writing.
+
+Milestone 5B.3 provides ProviderHost around an existing controller and adapter,
+without changing either or the scripted CLI. One explicit run_once produces once
+and submits a non-None proposal once. Provider failure, a terminal controller
+report, interruption, unexpected error, or same-host reentry permanently stops
+this wrapper. Stopped calls raise a fixed dedicated error rather than no_action.
+Reentry cannot invoke the adapter/controller again; if it occurs during proposal
+production, even a swallowed rejection prevents outer submission. After submission
+starts, the actual report/exception and effects are preserved without cancellation
+or rollback claims. Session resources and provider cleanup remain caller-owned;
+there is no reset, concurrent dispatcher, or new authority/admission registry.
+
 Tests inject terminal streams and storage failures and use real temporary JSONL to
 verify handler counts, state, correlation, and failure paths. Crash durability,
 concurrent writers, authentication, and arbitrary malicious Python containment are

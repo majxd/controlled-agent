@@ -47,8 +47,10 @@ The MVP uses Python 3.12+, one local process, a CLI, scripted proposals,
 and local JSONL auditing. Scripted Demo remains the default. Provider output
 is untrusted: `no_action` and provider failures do not submit work, while a valid
 plain proposal still enters the existing controller/governance boundary. Milestone
-5B.2 now implements an optional one-shot Groq provider, verified offline only.
-Live inference and provider CLI wiring still require separate authorization.
+5B.2 implements an optional one-shot Groq provider. Its offline verification and
+the separately user-reported connectivity/decoding-only live smoke test are
+documented in ARCHITECTURE.md. Milestone 5B.3 adds programmatic host integration
+below. Further live inference and provider CLI wiring require separate authorization.
 
 ## Optional Groq provider (5B.2, offline-verified)
 
@@ -72,7 +74,8 @@ python3.12 -m venv /trusted/temporary/5b2-env
 
 The same pins are declared as the `groq` optional extra in pyproject.toml. The
 provider imports dependencies lazily; no key is needed for these tests. All SDK
-tests use dummy keys, MockTransport, and blocked sockets/DNS. Python 3.12.14 with
+tests use dummy keys, MockTransport, and blocked sockets/DNS. Historical 5B.2
+verification on Python 3.12.14 with
 `-B`: **270 executed/passed, 0 skipped**. With `-B -S` (no site packages):
 **253 executed/passed, 17 SDK tests skipped**, 270 discovered. The prior 246 tests
 remain unchanged. No live inference or real credentials were used.
@@ -85,6 +88,47 @@ finite phase limits, not a total wall-clock deadline; response size limits apply
 after buffering, not while bytes arrive. Account tier/quota, actual model access,
 zero-spend controls, and data-retention/ZDR settings remain unverified prerequisites
 for any separately authorized live smoke test. See [decision 22](DECISIONS.md#22-milestone-5b2-optional-groq-transport-unchanged-data-only-boundary).
+
+## Programmatic provider host (5B.3)
+
+ProviderHost borrows the application's existing controller and adapter. It does
+not construct session resources, own provider cleanup, or add a CLI mode:
+
+```python
+from controlled_agent.provider_host import ProviderHost
+
+# Trusted application code supplies its existing per-session objects and
+# public/synthetic ProviderRequest. Keep using this same host for the session.
+host = ProviderHost(controller=controller, adapter=adapter)
+report = host.run_once(request)  # ControllerReport, or None only for no_action.
+```
+
+Each explicit call produces once and submits non-None data once. The existing
+controller still owns UUID/caller assignment and the governance/execution path.
+ProviderError, terminal reports, interruptions, unexpected errors, and same-host
+reentry permanently stop the host. A later call raises ProviderHostStopped with
+fixed `provider_host_stopped`, not None. There is no retry, fallback, reset/resume,
+resource recreation, or automatic result feedback. The owner must not bypass
+stopping by replacing the host. Keep resource/provider cleanup in caller-owned
+contexts and never expose raw exception diagnostics.
+
+Nested calls raise ProviderHostReentry before another adapter/controller call.
+Swallowed reentry during proposal generation prevents outer submission. After
+submission begins, the original report or exception and attached report are
+preserved; the original action may have completed. A nonterminal report can
+therefore accompany host.stopped=True. Honor the host's stopped state and never
+interpret it as cancellation or rollback. No locks or concurrency are supported.
+See the [5B.3 contract](ARCHITECTURE.md#milestone-5b3-sequential-provider-to-host-integration)
+and [decision 23](DECISIONS.md#23-milestone-5b3-borrow-existing-components-and-retain-host-stop-state).
+
+5B.3 full verification on Python 3.12.14: `-B` with the existing optional
+dependencies passed **292 tests, 0 skipped**; `-B -S` passed **274 tests,
+18 skipped**, 292 discovered. All prior tests remain unchanged. The new host tests
+include real temporary JSONL, state/handler checks, swallowed reentry, terminal
+reports, preserved exceptions, and one actual-SDK/MockTransport handoff with dummy
+credentials and blocked network/DNS. No live inference or credential access was
+performed. Core modules, providers/adapter, scripted CLI, and dependencies are
+unchanged; Scripted Demo remains the default.
 
 ## Tests and module boundaries
 
