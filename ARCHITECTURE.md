@@ -12,8 +12,9 @@ approved and documented the provider/model proposal boundary. Milestone 5B.1
 implements its offline provider interface, Mock Provider, and structural adapter.
 Milestone 5B.2 adds an optional Groq provider with offline SDK/transport verification.
 The 4B section records the current scripted CLI integration; the 5B.1 section
-records the host-facing interface. No live inference or provider CLI wiring has
-been performed. Earlier milestone sections describe their original increments.
+records the host-facing interface. Provider CLI wiring remains unimplemented;
+later manual live-smoke evidence is recorded in the 5B.2 section below.
+Earlier milestone sections describe their original increments.
 
 Proposals are untrusted input. The application supplies caller context, policy,
 resource metadata, approval input, and authorization. Arbitrary malicious code
@@ -287,14 +288,32 @@ correlation and lifecycle order; handler counts, approval, denial, state, tombst
 and consumed authority are checked. Failure/no_action creates no submission, UUID,
 or lifecycle records. Failure after a mutation preserves stale-baseline behavior.
 
-No live request, actual account, credential, billing, model quality, or production
-behavior was verified. A separately authorized zero-budget live smoke test requires
+At 5B.2 implementation closure, no live request, actual account, credential, billing,
+model quality, or production behavior had been verified. A separately authorized
+zero-budget live smoke test requires
 checking the actual account tier/quota and spend controls, current model availability
 and permissions, and account data-retention/ZDR controls first. Public advertised
 limits do not prove an account's entitlement or zero cost. Retention exceptions and
 usage metadata must be reviewed; no real industrial or confidential inputs are
 permitted. Result feedback, metrics, loops, fallback, and provider CLI wiring remain
 deferred. See decision 22 for official references and rationale.
+
+**Manual live smoke test — 2026-10-19 (user-reported):** The user performed one
+synthetic Groq request against baseline
+`fe88738398067c33af14ee871853f51d363797c4`, using the existing GroqProvider and
+ProposalAdapter to propose reading WO-1001. The reported decoded output was:
+
+```json
+{"tool_name":"get_work_order","arguments":{"work_order_id":"WO-1001"}}
+```
+
+This single request verified live connectivity and proposal decoding only.
+No Controller submission, tool execution, or audit writing occurred. It does not
+verify end-to-end execution, broader model quality, quota/billing guarantees,
+data-control enforcement, or production readiness. This record documents the
+user's observation; no inference was rerun and no credentials were accessed to
+prepare it. The automated test results above are historical and were not rerun
+for this documentation-only update. Further live work requires separate approval.
 
 ## Minimal contracts
 
