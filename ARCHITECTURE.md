@@ -379,7 +379,7 @@ Existing service/executor guards continue to govern direct calls into the core;
 the host guard only prevents another host operation. In-process malicious code
 and a caller intentionally bypassing the wrapper remain outside the threat model.
 
-Verification: Python 3.12.14 with `-B`, Groq 1.7.0 and HTTPX 0.28.1: 292 executed
+Implementation verification: Python 3.12.14 with `-B`, Groq 1.7.0 and HTTPX 0.28.1: 292 executed
 and passed, 0 skipped. With `-B -S`: 274 executed and passed, 18 skipped, 292
 discovered. The 270 existing tests are unchanged; 22 new tests focus on host
 handoff/lifetime rather than repeating SDK decoding matrices. They read real
@@ -389,7 +389,55 @@ responses. They cover stopped misuse, swallowed and uncaught reentry before/afte
 submission, preservation of original reports/interruption objects, and audit
 failure effects. One optional actual-SDK/MockTransport test uses dummy credentials
 with blocked network/DNS and verifies caller-owned cleanup. No live inference,
-credential access, dependency change, or provider CLI integration was performed.
+credential access, dependency change, or provider CLI integration was performed
+during that implementation verification.
+
+**Manual live read-only smoke test — 2026-10-19 (user-reported):** The user
+manually ran the corrected smoke-test command against baseline
+`642c6f5a269270c846188f60bf77b8f97dc247f7` and reported one successful live
+synthetic read of WO-1001 through GroqProvider → ProposalAdapter → ProviderHost
+→ Controller.submit() → existing deterministic governance → internal authorization
+→ executor → fake local read tool. The command supplied only public read-tool
+metadata to the provider, configured trusted demo_operator permissions for
+reading only, and configured no approval callbacks. One caller-owned session
+used a real JsonlAuditWriter in a private temporary runtime directory outside Git,
+with no retry, fallback, or automatic rerun.
+
+The user reported this bounded summary:
+
+```json
+{
+  "controller_outcome": "succeeded",
+  "execution_effect": "succeeded",
+  "controller_audit_failed": false,
+  "host_stopped": false,
+  "no_action": false,
+  "audit_verification": "read_lifecycle_verified",
+  "audit_records": 5,
+  "provider_cleanup": "ok",
+  "audit_cleanup": "ok",
+  "failure": null,
+  "result": {"work_order_id": "WO-1001", "status": "open"},
+  "smoke_passed": true
+}
+```
+
+The reported verification means the command read back five persisted events
+correlated to the same controller action ID and trusted caller: action_submitted,
+governance_decision, authorization_issued, execution_started, execution_succeeded.
+Admission precedes parsing, so action_submitted contains submitted_tool_name=null;
+the later governance and execution checks bind the read to get_work_order/WO-1001.
+The summary reports successful provider and audit cleanup, with the work order
+still open. This is distinct from the earlier 5B.2 connectivity/decoding-only
+test, which performed no Controller submission, execution, or audit writing.
+
+This records the user's observation of one live read-only path, not independent
+reverification of its runtime logs. It does not establish live approval/denial
+coverage, mutation or failure-path coverage, production readiness, or billing,
+quota, privacy, or data-control guarantees. No inference, credential access,
+runtime-log inspection, or test reruns were performed for this documentation-only
+update; the automated counts above remain historical implementation evidence.
+Further live work requires separate approval.
 
 ## Minimal contracts
 

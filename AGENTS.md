@@ -14,8 +14,10 @@
   adapter. Milestone 5B.2 adds an explicitly authorized optional Groq provider,
   verified offline with the actual SDK and blocked network/DNS. Milestone 5B.3
   adds the authorized sequential ProviderHost handoff and permanent stopping.
-  The separately reported 2026-10-19 live smoke test verified connectivity and
-  proposal decoding only. Further live inference, provider CLI wiring, and the
+  Two separate user-reported manual live tests on 2026-10-19 cover connectivity/
+  proposal decoding only (5B.2) and one governed synthetic read with correlated
+  JSONL auditing and cleanup (5B.3); see ARCHITECTURE.md for evidence and limits.
+  Further live inference, provider CLI wiring, and the
   remaining 5B/5C scope remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
