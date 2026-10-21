@@ -15,7 +15,7 @@ Milestone 5B.3 adds a small sequential ProviderHost around the existing controll
 and adapter, with no changes to the execution core or scripted CLI.
 The 4B section records the current scripted CLI integration; the 5B.1 section
 records the host-facing interface. Provider CLI wiring remains unimplemented;
-later manual live-smoke evidence is recorded in the 5B.2 section below.
+later user-reported live verification is recorded in the 5B.2 and 5B.3 sections below.
 Earlier milestone sections describe their original increments.
 
 Proposals are untrusted input. The application supplies caller context, policy,
@@ -379,7 +379,7 @@ Existing service/executor guards continue to govern direct calls into the core;
 the host guard only prevents another host operation. In-process malicious code
 and a caller intentionally bypassing the wrapper remain outside the threat model.
 
-Implementation verification: Python 3.12.14 with `-B`, Groq 1.7.0 and HTTPX 0.28.1: 292 executed
+Verification: Python 3.12.14 with `-B`, Groq 1.7.0 and HTTPX 0.28.1: 292 executed
 and passed, 0 skipped. With `-B -S`: 274 executed and passed, 18 skipped, 292
 discovered. The 270 existing tests are unchanged; 22 new tests focus on host
 handoff/lifetime rather than repeating SDK decoding matrices. They read real
@@ -389,55 +389,46 @@ responses. They cover stopped misuse, swallowed and uncaught reentry before/afte
 submission, preservation of original reports/interruption objects, and audit
 failure effects. One optional actual-SDK/MockTransport test uses dummy credentials
 with blocked network/DNS and verifies caller-owned cleanup. No live inference,
-credential access, dependency change, or provider CLI integration was performed
-during that implementation verification.
+credential access, dependency change, or provider CLI integration was performed.
 
-**Manual live read-only smoke test — 2026-10-19 (user-reported):** The user
-manually ran the corrected smoke-test command against baseline
-`642c6f5a269270c846188f60bf77b8f97dc247f7` and reported one successful live
-synthetic read of WO-1001 through GroqProvider → ProposalAdapter → ProviderHost
-→ Controller.submit() → existing deterministic governance → internal authorization
-→ executor → fake local read tool. The command supplied only public read-tool
-metadata to the provider, configured trusted demo_operator permissions for
-reading only, and configured no approval callbacks. One caller-owned session
-used a real JsonlAuditWriter in a private temporary runtime directory outside Git,
-with no retry, fallback, or automatic rerun.
+**Live three-case verification — 2026-10-21 (user-reported):** Against baseline
+`87c1c3e0fdbe827fd23a1da800695045fb8e10d8`, the user reported successful manual
+verification of three separately gated synthetic update cases through
+GroqProvider → ProposalAdapter → ProviderHost → Controller.submit() → existing
+deterministic governance → internal authorization → executor → fake local tools.
+These were synthetic local work orders, not real industrial operations. The
+trusted session used update-only demo_operator permissions; the provider supplied
+proposal data, not approval or execution authority.
 
-The user reported this bounded summary:
+| Case | Requested synthetic change | Controller outcome | Governance decision | Execution effect |
+| --- | --- | --- | --- | --- |
+| 1: human decline | WO-1001 → closed | approval_not_granted | REQUIRE_APPROVAL | no_dispatch |
+| 2: protected-target denial | WO-9001 → closed | denied | DENY | no_dispatch |
+| 3: human approval | WO-1001 → closed | succeeded | REQUIRE_APPROVAL | succeeded |
 
-```json
-{
-  "controller_outcome": "succeeded",
-  "execution_effect": "succeeded",
-  "controller_audit_failed": false,
-  "host_stopped": false,
-  "no_action": false,
-  "audit_verification": "read_lifecycle_verified",
-  "audit_records": 5,
-  "provider_cleanup": "ok",
-  "audit_cleanup": "ok",
-  "failure": null,
-  "result": {"work_order_id": "WO-1001", "status": "open"},
-  "smoke_passed": true
-}
-```
+The user reported all three cases verified, with:
 
-The reported verification means the command read back five persisted events
-correlated to the same controller action ID and trusted caller: action_submitted,
-governance_decision, authorization_issued, execution_started, execution_succeeded.
-Admission precedes parsing, so action_submitted contains submitted_tool_name=null;
-the later governance and execution checks bind the read to get_work_order/WO-1001.
-The summary reports successful provider and audit cleanup, with the work order
-still open. This is distinct from the earlier 5B.2 connectivity/decoding-only
-test, which performed no Controller submission, execution, or audit writing.
+- Three provider invocations, each with HTTP status 200.
+- 13 persisted audit records, one update-handler invocation, and zero read-handler
+  invocations.
+- One consumed authorization; final synthetic state WO-1001 closed and WO-9001 open.
+- Provider, audit, and terminal cleanup all `ok`; `failure=null` and
+  `all_cases_passed=true`.
 
-This records the user's observation of one live read-only path, not independent
-reverification of its runtime logs. It does not establish live approval/denial
-coverage, mutation or failure-path coverage, production readiness, or billing,
-quota, privacy, or data-control guarantees. No inference, credential access,
-runtime-log inspection, or test reruns were performed for this documentation-only
-update; the automated counts above remain historical implementation evidence.
-Further live work requires separate approval.
+Human approval retained the governance decision REQUIRE_APPROVAL; it did not
+turn a hard denial into permission. This is separate from the earlier
+user-reported 2026-10-19 read-only test against
+`642c6f5a269270c846188f60bf77b8f97dc247f7`, and from the 5B.2
+connectivity/decoding-only test and historical automated offline results.
+
+The previous case-1 `unavailable` failure remains unexplained. The later successful
+HTTP 200 responses neither diagnose its cause nor establish that it was fixed.
+This section records the user's report, not independent inspection or replay of
+the live run or its runtime logs. It does not establish production readiness,
+broader model quality, general failure-path coverage, or billing/privacy guarantees,
+and does not close any additional milestone. No tests or inference were rerun,
+credentials accessed, or code/dependencies changed for this documentation update.
+Further live work still requires separate authorization.
 
 ## Minimal contracts
 
