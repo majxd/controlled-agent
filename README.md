@@ -50,7 +50,8 @@ plain proposal still enters the existing controller/governance boundary. Milesto
 5B.2 implements an optional one-shot Groq provider. Its offline verification and
 the separately user-reported connectivity/decoding-only live smoke test are
 documented in ARCHITECTURE.md. Milestone 5B.3 adds programmatic host integration
-below. Further live inference and provider CLI wiring require separate authorization.
+below. The separately authorized one-shot 5B.4 demo is described below; further
+live inference still requires separate authorization.
 
 ## Optional Groq provider (5B.2, offline-verified)
 
@@ -129,6 +130,67 @@ reports, preserved exceptions, and one actual-SDK/MockTransport handoff with dum
 credentials and blocked network/DNS. No live inference or credential access was
 performed. Core modules, providers/adapter, scripted CLI, and dependencies are
 unchanged; Scripted Demo remains the default.
+
+## One-shot provider demo (5B.4, approved and closed)
+
+The existing `python -m controlled_agent` scripted CLI is unchanged. From the
+repository root, use the separate entry point with Python 3.12+ and a real
+interactive controlling terminal. Provision an existing trusted audit parent
+first; the program never creates directories or repairs log files/permissions.
+
+```sh
+# Offline by default: Mock Provider, synthetic read of WO-1001.
+python3.12 -B -m controlled_agent.provider_demo --audit-path var/provider-demo.jsonl
+
+# Offline update: the actual canonical action needs a fresh human response.
+python3.12 -B -m controlled_agent.provider_demo --audit-path var/provider-demo.jsonl --scenario update
+
+# Offline protected-target proposal: governance denies without asking approval.
+python3.12 -B -m controlled_agent.provider_demo --audit-path var/provider-demo.jsonl --scenario protected-update
+```
+
+`--audit-path` is required. `--provider` accepts `mock` (default) or `groq`;
+`--scenario` accepts `read` (default), `update`, or `protected-update`. No key,
+free-text prompt, approval, caller, permission, retry, or model-override argument
+exists. Mock needs no optional packages or network and never prompts for a key.
+Logs must remain outside version control; `var/` is already ignored.
+
+For a **separately authorized live run only**, use the same command with
+`--provider groq` under an environment containing the reviewed optional packages.
+It prompts for a hidden key on the controlling terminal; no saved key file or
+environment credential is read. Hidden-input fallback is rejected. Presence of
+SSLKEYLOGFILE, GROQ_LOG, or GROQ_CUSTOM_HEADERS, or enabled SDK/HTTP debug logging,
+is refused, not silently changed. Account/model/quota/data prerequisites still
+require independent review. No live inference was run for 5B.4 implementation.
+
+Each invocation performs at most one provider call through the existing adapter,
+ProviderHost, Controller and governed execution path. Read grants demo_operator
+only read permission; update scenarios grant only update permission. Only public
+tool descriptions and fixed synthetic prompts reach the provider. A scenario is
+not an expected human response or a model-output guarantee: other structurally
+valid proposals still reach governance, and review shows the actual canonical
+action. Only the service interprets fresh `approve`/`decline` input. Typeahead is
+discarded after complete review display/flush; EOF, partial or oversized input
+never authorizes. No automatic reprompt, retry, fallback, continuation, or reset.
+
+These are independent one-shot sessions, not the historical shared-session
+three-case verifier. Fake state starts open in each process and is not durable.
+Output preserves actual controller effects independently of audit/cleanup failure,
+and renders only fixed notices and known demo result fields, not raw diagnostics.
+It does not claim runtime audit readback verification. Exit codes: 0 for normal
+completion (including denial, declined/cancelled approval or no_action), 1 for
+operational/provider/terminal-host failures, 2 for usage or unavailable terminal,
+130 for KeyboardInterrupt. Cleanup failure cannot erase an earlier interruption.
+Output failure may prevent reporting entirely; it never triggers execution again.
+
+New offline verification on 2026-10-25, Python 3.12.14: **25 focused tests passed**;
+full discovery with Groq 1.7.0 / HTTPX 0.28.1 and `-B`: **317 passed, 0 skipped**.
+With `-B -S`: **297 passed, 20 skipped**, 317 discovered. These results include
+actual SDK/MockTransport, blocked network/DNS, dummy credentials, real temporary
+JSONL and automated PTY input, including proof that pretyped approval is discarded.
+They are not live or manual-human verification. All historical results above
+remain separate. The prior unexplained live `unavailable` failure is not diagnosed
+or claimed fixed by this implementation.
 
 ## Tests and module boundaries
 

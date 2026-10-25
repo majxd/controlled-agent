@@ -89,9 +89,10 @@ No unrestricted shell or filesystem tools, autonomous tool dispatch by an SDK,
 LLM-based governance decisions, parallel execution, automatic retries, durable
 approval recovery, or exactly-once execution guarantees. Milestone 5B.2 permits
 one optional Groq proposal provider and its isolated SDK dependencies. Milestone
-5B.3 adds only programmatic provider-to-host wiring and offline verification.
-Further live inference, provider CLI wiring, and model-quality evaluation remain
-outside the current milestone. Default dependencies remain empty.
+5B.3 added programmatic provider-to-host wiring and offline verification. The
+separately authorized 5B.4 adds a bounded one-shot provider demo, Mock by default,
+without changing the scripted CLI. Further live inference and model-quality
+evaluation remain outside this implementation task. Default dependencies remain empty.
 
 ## Security boundary and limitations
 
@@ -182,6 +183,15 @@ production, even a swallowed rejection prevents outer submission. After submissi
 starts, the actual report/exception and effects are preserved without cancellation
 or rollback claims. Session resources and provider cleanup remain caller-owned;
 there is no reset, concurrent dispatcher, or new authority/admission registry.
+
+Milestone 5B.4 adds `python -m controlled_agent.provider_demo --audit-path PATH`,
+defaulting to Mock/read, with fixed update and protected-update scenarios. Explicit
+Groq selection uses hidden local terminal key input; the new entry point refuses
+SSLKEYLOGFILE and unsafe logging/header configuration. Each invocation owns one
+session and calls ProviderHost once; governance and fresh human review remain
+authoritative. Caller-owned cleanup and safe rendering preserve completed/uncertain
+effects. The offline-verified implementation is approved and 5B.4 is closed;
+this is not additional live evidence, production readiness, or broader milestone closure.
 
 Tests inject terminal streams and storage failures and use real temporary JSONL to
 verify handler counts, state, correlation, and failure paths. Crash durability,

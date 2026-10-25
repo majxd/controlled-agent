@@ -14,7 +14,8 @@ Milestone 5B.2 adds an optional Groq provider with offline SDK/transport verific
 Milestone 5B.3 adds a small sequential ProviderHost around the existing controller
 and adapter, with no changes to the execution core or scripted CLI.
 The 4B section records the current scripted CLI integration; the 5B.1 section
-records the host-facing interface. Provider CLI wiring remains unimplemented;
+records the host-facing interface. The separately authorized 5B.4 adds a one-shot
+provider demo without changing the scripted entry point;
 later user-reported live verification is recorded in the 5B.2 and 5B.3 sections below.
 Earlier milestone sections describe their original increments.
 
@@ -478,6 +479,93 @@ broader model quality, general failure-path coverage, or billing/privacy guarant
 and does not close any additional milestone. No tests or inference were rerun,
 credentials accessed, or code/dependencies changed for this documentation update.
 Further live work still requires separate authorization.
+
+### Milestone 5B.4 one-shot provider demo (approved and closed)
+
+`provider_demo.py` is a separate `python -m controlled_agent.provider_demo` entry
+point, not a change to `python -m controlled_agent`. Required `--audit-path` supplies
+a trusted path with an existing parent. Provider defaults to Mock; scenario defaults
+to read. Fixed scenarios read WO-1001, propose closing WO-1001, or propose closing
+WO-9001. Explicit `--provider groq` is the only live-provider selection. No prompt,
+key, caller, policy, auto-approval, model override, retry or loop option is added.
+
+The caller owns one writer/service/fixture/executor/controller/provider/adapter/host
+session. Only the scenario's tool is permitted for demo_operator and described in
+ProviderRequest; private policy, resource protection and intended human responses
+never reach the model. Mock reuses existing scripted data as its configured output.
+Groq receives a fixed public/synthetic prompt. The scenario does not constrain a
+provider's output: valid alternate tool/target/argument proposals still go through
+the unchanged adapter and ProviderHost into governance. No temporary verification
+helper, exact-proposal matching guard, diagnostic observer, or private-state
+inspection is migrated. Mock is deterministic; Groq output is not guaranteed.
+
+After setup, the runner calls ProviderHost.run_once exactly once. None alone is
+no_action, with no submission or action ID. Provider errors stop without submission
+and render only existing fixed codes. A report's terminal flag and host.stopped
+are honored independently. There is no automatic next call even for a nonterminal
+report, no_action, denial or decline. A new command starts a distinct fake session;
+the demo does not recreate resources mid-run or reproduce the historical three-case
+shared-session verification. No report or log grants execution authority.
+
+The real entry point requires terminal stdin/stdout and opens `/dev/tty` as an
+unbuffered read-only binary stream. Groq key input uses getpass with GetPassWarning
+treated as failure; never a redirected input, saved file or ambient credential.
+The host rejects SSLKEYLOGFILE presence and calls the existing provider logging/
+header guards before SDK/client construction, including a recheck after key input.
+It neither reads those values nor unsets variables or changes application logging.
+The optional dependency boundary, experimental model, finite phase timeouts,
+post-buffering size limits and zero-retry provider configuration are unchanged.
+
+Canonical review validates the known demo identity/change for safe display, then
+shows action ID, caller, tool, target, exact arguments, fixed baseline, proposed
+status and intended effect. After complete display/flush, tcflush discards queued
+input before a fresh-response prompt. Unbuffered one-byte reads prevent a buffered
+reader from retaining pretyped approval. Real terminal responses are capped at
+256 UTF-8 bytes excluding newline; EOF, invalid encoding, oversize and interruptions
+fail closed, and an unterminated prefix cannot approve. The service alone interprets
+the returned string, without coercion or reprompt. This is not human authentication
+or proof of viewing. Trusted injected text streams are an offline test seam only.
+
+The runner retains the original ControllerReport or attached controller_report
+before operational cleanup. It closes the owned Groq provider (Mock owns no
+resources) and context-managed writer while borrowed reporting channels remain
+open. Each cleanup is attempted once even if another fails; fixed cleanup notices
+do not replace the report or primary interruption. Existing Terminal.report renders
+actual effects and allowlisted result fields. A failed output channel can fall back
+to stderr without invoking the provider, controller or writer again. Failure of
+both output channels can prevent reporting; completed effects are never rolled
+back or relabelled as no dispatch. Terminal input ownership stays in main and is
+closed after operational results are rendered, with late close errors reported
+through still-borrowed output.
+
+Exit 0 means normal completion, including denial, decline/cancellation and no_action,
+not necessarily execution. Exit 1 covers provider/operational/audit/output/cleanup
+failure or a stopped host; 2 covers usage/unavailable terminal; KeyboardInterrupt
+uses 130. Original interruption precedence is retained across later cleanup errors.
+The demo reports controller audit status, not independent persisted-log verification.
+Runtime JSONL still obeys existing ownership/mode/tail/fsync checks, without repairs.
+
+**New offline evidence — 2026-10-25:** Python 3.12.14, Groq 1.7.0 / HTTPX 0.28.1,
+bytecode disabled: 25 focused tests passed; full discovery passed 317 tests with
+0 skipped. With `-B -S`, 297 passed and 20 optional-SDK tests skipped, 317 discovered.
+The prior 292 tests are unchanged. New coverage verifies one-shot ownership,
+dependency-free Mock operation, fresh terminal input and hidden dummy-key entry,
+canonical review, narrow permissions, no submission on failure/no_action, cleanup,
+output failure and retained completed/uncertain effects. Actual SDK tests use
+MockTransport and blocked network/DNS. Real temporary JSONL tests read persisted
+5/4/2/7-event lifecycles for read/decline/denial/approved update in independent
+sessions, with action/caller correlation, handler counts, state and consumed rights.
+A real PTY barrier queues approval while the provider is paused; after review only
+the newly entered decline is honored. Other PTY cases cover fresh approval, EOF,
+partial EOF, oversize, interruption and unavailable hidden entry.
+
+This is automated offline evidence, distinct from all historical implementation
+counts and user-reported live tests above. No live inference, real credentials,
+dependency upgrade, execution-core change or scripted CLI change was performed.
+Production readiness, broader model quality, billing/privacy guarantees and closure
+of additional milestones are not claimed. The earlier live unavailable failure
+remains unexplained. Final user review approved and closed 5B.4 only; overall 5B
+and 5C remain open, and any new live run still requires separate authorization.
 
 ## Minimal contracts
 

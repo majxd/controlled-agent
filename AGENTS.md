@@ -20,8 +20,10 @@
   local update, with persisted auditing and cleanup; see ARCHITECTURE.md. It is
   separate from the earlier read-only test and offline evidence. The prior
   unavailable failure remains unexplained; no additional milestone is closed.
-  Further live inference, provider CLI wiring, and the
-  remaining 5B/5C scope remain unauthorized.
+  Milestone 5B.4 implements the separately authorized one-shot provider demo,
+  Mock by default, with offline verification; final user review approved and closed 5B.4.
+  The scripted CLI remains unchanged. Further live inference and remaining
+  5B/5C scope beyond this bounded demo remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -110,8 +112,8 @@
   failure must stop before submission. Never add automatic provider fallback or
   retry, reset trusted session state after provider failure, or merge provider
   metrics/model-quality evaluation into execution JSONL auditing. Design approval
-  is not implementation authorization: do not expand beyond the authorized 5B.3
-  programmatic host integration without explicit scope.
+  is not implementation authorization: do not expand beyond the authorized 5B.4
+  one-shot demo without explicit scope.
 - ProviderHost borrows the existing controller and adapter; the caller still owns
   all resources and provider cleanup. Each explicit run_once calls the adapter once
   and submits non-None output once. None means only no_action, never stopped-host
@@ -133,6 +135,19 @@
   data, proposal output, audit data, or public diagnostics. Do not enable SDK debug
   logging or modify application logging configuration. Tests use dummy credentials,
   MockTransport, and blocked network/DNS; never run live inference implicitly.
+- The separate provider_demo entry point defaults to Mock/read and requires a
+  trusted audit path. It owns one session and calls ProviderHost.run_once once.
+  Groq requires explicit selection and hidden controlling-terminal key input;
+  reject SSLKEYLOGFILE presence and existing unsafe logging/header settings before
+  SDK/client construction without reading values or changing configuration.
+  After complete canonical review and flush, discard queued input and collect one
+  bounded newline-terminated response through unbuffered terminal reads. Never
+  coerce a response to match a scenario. Retain reports/attached controller_report
+  before cleanup; close owned provider/writer resources while output remains
+  usable. Cleanup/output failure cannot erase completed or uncertain effects.
+  MockProvider has no resources to close. No temporary verification helpers,
+  private-state inspection, HTTP diagnostic observer, retries, or loop belong in
+  this demo. New live runs still need separate authorization.
 - Default to denial for malformed requests, unknown tools or targets, absent
   permissions, and unresolved policy. A hard denial cannot become approval.
 - The executor accepts only an internal single-use authorization reference and

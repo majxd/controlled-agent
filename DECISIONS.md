@@ -11,6 +11,7 @@ controller/CLI integration, ADR-5A records the approved provider boundary, and
 decision 21 records the authorized offline 5B.1 implementation, and decision 22
 records the separately authorized optional 5B.2 Groq provider and offline verification.
 Decision 23 records the authorized 5B.3 programmatic host handoff and stop policy.
+Decision 24 records the separately authorized 5B.4 one-shot provider demo.
 
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
@@ -619,3 +620,46 @@ is application lifecycle data, not authorization or a sandbox against in-process
 bypasses. Programmatic integration adds no CLI mode, prompt/key input, rendering,
 automatic feedback, metrics, or agent loop. Scripted Demo remains the default;
 further live execution and any provider CLI changes need separate approval.
+
+## 24. Milestone 5B.4: Separate one-shot terminal wiring, Mock by default
+
+**Decision:** Add provider_demo.py and focused tests, with a separate module entry
+point and a required trusted audit path. Keep the scripted CLI, providers, adapter,
+ProviderHost, controller, execution core and dependency declarations unchanged.
+Default Mock/read needs no network or SDK. Fixed synthetic read/update/protected-update
+scenarios select public metadata and narrow host-configured permissions, not policy
+decisions or human answers. Explicit Groq selection requires hidden terminal key
+input; no ambient/saved credentials, free prompts or model overrides are supported.
+
+**Rationale:** A small runner and terminal adapter are sufficient. Reuse the existing
+scripted proposal data, canonical domain formatter and safe Terminal report renderer;
+do not reuse the scripted menu loop or create another provider/session framework.
+Do not migrate temporary smoke-test instrumentation, private-state verification,
+HTTP observers or exact-output guards. Unknown or alternate structurally valid
+proposals still reach deterministic governance through the unchanged host path.
+
+**Lifetime and reporting:** One session, one run_once, no retries, fallback,
+continuation or reset. The caller closes the owned Groq provider and audit writer;
+MockProvider has no close interface or resource ownership. Retain original reports
+and attached controller_report before cleanup. Keep reporting channels open until
+operational cleanup is known; report cleanup/output failure separately without
+erasing completed/uncertain effects or the original interruption. Honor host.stopped
+even with nonterminal success. Exit 0 is normal handling, not proof of execution;
+1 is operational/provider/terminal-host failure, 2 is usage/terminal unavailability,
+and KeyboardInterrupt is 130. No runtime audit-readback verification is claimed.
+
+**Input boundary:** Refuse SSLKEYLOGFILE presence before SDK/client construction;
+preserve existing unsafe logging/header guards without reading values or changing
+configuration. Reject GetPassWarning instead of accepting echoed key input. Display
+the complete bounded canonical action, flush, discard queued terminal input, and
+read one fresh bounded newline-terminated response with no buffered read-ahead.
+Only the existing service interprets approval. No expected-response coercion,
+truncation-to-approval, reprompt or human-authentication claim is introduced.
+
+**Evidence and limits:** New 2026-10-25 offline verification on Python 3.12.14:
+25 focused tests passed; full `-B` discovery with Groq 1.7.0 / HTTPX 0.28.1 passed
+317 tests, 0 skipped. Without site packages (`-B -S`), 297 passed and 20 skipped.
+Actual SDK tests use dummy keys, MockTransport and blocked network/DNS. Real JSONL
+and PTY tests verify lifecycles, effects, cleanup and pretyped-approval rejection.
+Historical sections remain unchanged. Final user review approved and closed 5B.4 only;
+no live inference, broader model-quality claim or further milestone closure follows.
