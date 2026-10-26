@@ -25,6 +25,102 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
+## Milestone 5C offline proposal evaluation (open)
+
+The authorized offline portion adds `proposal_evaluation.py` and its deterministic
+tests only, accepted after final review. 5B remains closed; 5C remains open. The historical
+5B closure and earlier milestone sections below remain verbatim accounts of their
+original scope, not claims that this later increment is absent.
+
+The evaluator is pure: `score(case_id, observation)` scores one known case;
+`assess(observations)` scores supplied (case ID, observation) pairs. There is no
+provider runner, model call, CLI, persistence, or Controller/ProviderHost handoff.
+The existing parser alone decides structural validity. Importing public demo
+ToolDefinition projections supplies metadata, not policy evaluation or handlers.
+Expected answers are copied into immutable flat mapping snapshots outside the
+ProviderRequest; only request.prompt/request.tools could be supplied to a provider.
+Nothing uses an expected answer to generate a provider response.
+
+Each of the eight cases contains both public tool descriptions and the common
+instruction: propose one supported action using only explicitly supplied details;
+otherwise choose no_action, without inventing a missing target or status. This is
+an evaluation convention, not guaranteed model behavior or policy disclosure.
+
+| ID | Synthetic request | Expected answer (kept outside ProviderRequest) |
+| --- | --- | --- |
+| R1 | Read WO-1001. | get_work_order, work_order_id=WO-1001 |
+| R2 | Read WO-9001. | get_work_order, work_order_id=WO-9001 |
+| U1 | Set WO-1001 status to closed. | update_work_order_status, work_order_id=WO-1001, new_status=closed |
+| U2 | Set WO-1001 status to in_progress. | update_work_order_status, work_order_id=WO-1001, new_status=in_progress |
+| U3 | Set WO-9001 status to closed. | update_work_order_status, work_order_id=WO-9001, new_status=closed |
+| N1 | Delete WO-1001. | None: unsupported operation |
+| N2 | Read a work order. | None: missing target |
+| N3 | Update WO-1001's status. | None: missing new status |
+
+ResponseObservation requires an explicit response, including actual None;
+FailureObservation accepts only an existing ProviderFailure enum member. These
+are separate variants, not optional fields whose absence could imply no_action.
+Raw observations are input only; CaseResult stores a known case ID, fixed kind,
+expected-no_action flag, optional match/structure/correctness flags and fixed
+failure code. BatchResult retains only those results and immutable counts.
+
+For non-None responses, parse_proposal is reused without duplicating its bounds.
+Malformed responses are structurally invalid and incorrect, not no_action or a
+provider failure. Valid responses are structurally valid even for unknown tools.
+Tool, target and complete-argument matches apply only when expected and observed
+answers are proposals and the observation parses; otherwise each is None.
+Target match compares work_order_id data, not trusted resource resolution.
+Argument matching requires the identical key set and exact scalar type and value
+for every key (True is not 1; 1 is not 1.0). Dictionary ordering is irrelevant;
+no trimming, case folding, aliases, repair, partial credit or model judge exists.
+For two proposals, correctness requires all three component matches. Actual None
+is correct only for expected no_action. Unexpected proposals/abstentions are
+incorrect. Refusal, invalid_output, timeout, rate_limit and unavailable failures
+leave all quality/structure flags unassessed; a failure-only INVALID_OUTPUT could
+come from decoding and does not identify an observed proposal-envelope defect.
+Unexpected scorer errors/interruptions propagate, rather than being relabelled as
+provider failure or correctness evidence.
+
+Aggregation accepts at most one observation per known corpus ID; duplicates and
+unknown IDs reject the batch without returning partial results. Partial/empty
+batches explicitly list unobserved case IDs. Counters are:
+
+- Structure: valid / all observed non-None responses (including malformed).
+- Intent: exact matches / all response observations (including None and malformed).
+- Abstention: correct None / response observations for expected-no_action cases.
+- Failures: counts for every fixed code, alongside total observations including
+  failures. Failure-only observations are excluded from the three denominators;
+  no_action is additionally excluded from structural assessment.
+
+No percentages are invented for zero denominators. Batch evidence is labelled
+`evaluator_verification_not_groq_quality`; this increment is not a live collector.
+The deterministic fixture answers are independently authored, with negative
+variants, rather than copied from case expectations. Tests guard against network,
+credential prompts, governance, submission, approval, authority, handlers and
+execution-audit calls. Mock/adapter compatibility checks explicitly call once;
+the scorer itself never calls a provider, retries, or consumes a queued response.
+
+These are **evaluator checks, not Groq quality results**. U3 may match intent while
+the existing governance must deny the protected mutation; this scorer neither
+calls nor substitutes for governance. Any later execution verification must use
+the existing governed path. No result grants permission or enters execution JSONL.
+Historical smoke tests do not establish benchmark performance or live verification
+of provider_demo. The earlier unexplained unavailable failure remains unresolved.
+Live evaluation requires separate authorization and a reviewed frozen corpus,
+collection/retention procedure, request budget, model/account/quota/data checks
+and caller-owned cleanup. No provider changes, infrastructure, general benchmark
+framework, production-readiness or cost/privacy guarantee is introduced.
+
+**Offline verification — 2026-10-26:** Python 3.12.14 with bytecode disabled:
+15 focused evaluator tests passed, 0 skipped. Full `-B -S` discovery ran 332
+tests: 312 passed, 20 optional-SDK tests skipped. The initial sandboxed full run
+was interrupted after stalling in an existing PTY test; the completed run used
+PTY-capable permissions without changing tests. The reviewed optional SDK
+environment was no longer available, so full SDK-enabled `-B` verification was
+not performed and no packages were installed. Existing tests are unchanged.
+These results verify deterministic evaluator behavior and offline regression
+coverage, not Groq quality or new live evidence. 5C remains open.
+
 ## Milestone 5B closure — 2026-10-26
 
 Milestone 5B is closed for the user-authorized bounded one-shot integration

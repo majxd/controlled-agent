@@ -1,5 +1,9 @@
 # Architectural Decisions
 
+**Current 5C increment:** The approved offline scorer/corpus is implemented,
+accepted after final review; 5C remains open and 5B remains closed. Decision 25 records
+this evaluator-only scope. All earlier milestone accounts below remain historical.
+
 This records the agreed direction for Controlled Agent's first MVP. Milestones
 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C end-to-end
 verification passed; its documentation-only closure adds no architecture or runtime
@@ -672,3 +676,30 @@ Actual SDK tests use dummy keys, MockTransport and blocked network/DNS. Real JSO
 and PTY tests verify lifecycles, effects, cleanup and pretyped-approval rejection.
 Historical sections remain unchanged. Final user review approved and closed 5B.4 only;
 no live inference, broader model-quality claim or further milestone closure follows.
+
+## 25. Milestone 5C: Pure offline proposal scoring, not execution or model evidence
+
+**Decision:** Add only a small pure scorer, eight immutable synthetic cases and
+deterministic tests. No acquisition runner, CLI, persistence, dependency, provider
+change or execution integration. Expected answers stay outside ProviderRequest;
+requests contain public tool descriptions and synthetic text only. Results retain
+fixed labels/flags and counts, not responses, exceptions, or authority.
+
+**Scoring:** Explicit ResponseObservation and FailureObservation distinguish actual
+None/no_action from failure-only evidence. Use existing parse_proposal for shape;
+compare tool, target data and complete argument keys/types/values only when both
+answers are proposals and the observation parses. No normalization or partial
+credit. Unexpected abstention/proposal and malformed response are incorrect;
+failure codes leave correctness unassessed and remain counted separately. An
+INVALID_OUTPUT code alone does not identify an observed envelope defect. Reject
+duplicate/unknown case IDs; support partial/empty batches with visible exclusions
+and denominators, no weighted score or fabricated percentage.
+
+**Rationale and limits:** Unsupported/incomplete-request no_action is the approved
+corpus convention, not a claim about provider behavior. A protected-target update
+can match intent while governance must deny execution. The evaluator performs
+neither governance nor any submission/approval/authorization/tool/audit operation.
+Fixture/Mock results verify this evaluator only, not Groq quality; historical live
+smoke tests are not a benchmark. 5C remains open; live evaluation, collection and
+retention require separate authorization. No production, cost/privacy or broader
+model-quality claim follows, and the unexplained unavailable failure remains open.

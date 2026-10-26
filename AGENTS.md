@@ -27,8 +27,10 @@
   the bounded one-shot integration implemented in 5B.1–5B.4. Historical evidence
   and limitations remain unchanged; the provider_demo entry point has no live
   verification claim. The scripted CLI remains unchanged. Milestone 5C remains
-  open and unimplemented. Further live inference and scope beyond this bounded
-  integration remain unauthorized.
+  open: only its authorized pure offline scorer, eight synthetic cases and
+  deterministic evaluator verification are implemented and accepted after final review.
+  Fixtures and Mock results do not measure Groq quality. Further live inference
+  and scope beyond this offline evaluation remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -153,6 +155,17 @@
   MockProvider has no resources to close. No temporary verification helpers,
   private-state inspection, HTTP diagnostic observer, retries, or loop belong in
   this demo. New live runs still need separate authorization.
+- The offline proposal evaluator scores supplied observations only; it never
+  calls providers, Controller/ProviderHost, approval, authorization, tools, or an
+  audit writer. Expected answers are immutable and outside ProviderRequest.
+  Reuse parse_proposal; compare scalar types and values without normalization.
+  None is an actual no_action response, distinct from fixed ProviderFailure
+  observations. Only two parsed proposals permit component match flags; failure
+  leaves correctness unassessed. Aggregate at most one observation per known case
+  ID, retaining explicit denominators and failure counts. Results contain no raw
+  response or exception text, stay separate from execution JSONL, and grant no
+  authority. A protected-target proposal can match intent yet require governance
+  denial. Fixture results verify the evaluator, not Groq or broader model quality.
 - Default to denial for malformed requests, unknown tools or targets, absent
   permissions, and unresolved policy. A hard denial cannot become approval.
 - The executor accepts only an internal single-use authorization reference and

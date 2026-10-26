@@ -12,6 +12,12 @@ when required.
 
 ## Status
 
+**Current 5C increment:** The pure offline proposal scorer and eight-case synthetic
+corpus are implemented with deterministic verification, accepted after final review.
+Fixture and Mock results verify the evaluator, not Groq quality. 5B remains closed;
+5C remains open. No provider runner, CLI, persistence or execution integration is
+added. Historical status/evidence below remains unchanged.
+
 Milestone 5B is closed by documentation-only review on 2026-10-26, limited to
 the bounded one-shot integration in 5B.1–5B.4. Mock remains the provider-demo
 default; the scripted CLI is unchanged. Milestone 5C remains open and unimplemented.
@@ -199,6 +205,44 @@ JSONL and automated PTY input, including proof that pretyped approval is discard
 They are not live or manual-human verification. All historical results above
 remain separate. The prior unexplained live `unavailable` failure is not diagnosed
 or claimed fixed by this implementation.
+
+## Offline proposal evaluation (5C, open)
+
+`controlled_agent.proposal_evaluation` exposes immutable `CASES`,
+`score(case_id, observation)` and `assess((case_id, observation) pairs)`.
+`ResponseObservation(response=None)` records actual no_action;
+`FailureObservation(failure=ProviderFailure.TIMEOUT)` records failure only. No
+provider is called by either scoring function. The corpus's expected answers
+never enter its public ProviderRequests. Results retain only case IDs, fixed
+labels, flags and counts, not raw responses or exception text.
+
+Reuse of parse_proposal checks structure, not permission. Tool, work_order_id and
+complete arguments are compared only for two proposals with a parsed observation;
+comparison requires identical scalar types/values and keys, with no repair or
+normalization. Otherwise those flags are None (unassessed). Malformed responses
+and unexpected proposals/no_action are incorrect; all fixed provider failures
+leave correctness and structure unassessed, including INVALID_OUTPUT when only
+the failure code is observed. Refusal never counts as successful abstention.
+
+Aggregation rejects duplicate/unknown IDs. It reports total observations,
+unobserved case IDs, all fixed failure counts, and explicit numerator/denominator
+pairs for structure, exact intent and expected no_action. Empty/partial/all-failure
+batches are permitted; 0/0 means not assessed, never an invented success percentage.
+A correct protected-target proposal still needs downstream governance denial;
+quality results grant no authority and never enter execution JSONL.
+
+Run the focused offline checks (no SDK required):
+
+```sh
+python3.12 -B -S -m unittest discover -s tests -p test_proposal_evaluation.py -v
+```
+
+This is **evaluator verification, not Groq quality**. The eight fixed cases do not
+establish general language understanding or production readiness. Live evaluation
+requires separate authorization, reviewed collection/retention, request budget,
+model/account/quota/data prerequisites and caller-owned provider cleanup. The
+earlier unavailable failure remains unresolved. See the
+[case matrix and scoring contract](ARCHITECTURE.md#milestone-5c-offline-proposal-evaluation-open).
 
 ## Tests and module boundaries
 

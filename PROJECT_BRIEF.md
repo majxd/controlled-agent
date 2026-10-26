@@ -115,6 +115,15 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
+**Current 5C increment:** The authorized offline portion now provides a pure
+proposal scorer, eight synthetic cases and deterministic verification, accepted
+after final review. It compares supplied response/failure observations without running
+providers or execution. Fixture/Mock results verify the evaluator, not Groq quality.
+5B stays closed; 5C stays open. Live evaluation, credentials, result persistence
+and new execution integration remain out of scope. Earlier status accounts below
+retain their historical meaning; see the
+[offline evaluator contract](ARCHITECTURE.md#milestone-5c-offline-proposal-evaluation-open).
+
 Milestone 5B is closed as of 2026-10-26 for the bounded one-shot provider
 integration implemented in 5B.1–5B.4. This documentation-only review adds no
 runtime behavior or new test/live evidence. Milestone 5C remains open and
