@@ -1,4 +1,4 @@
-"""Pure offline evaluator verification, not Groq quality or execution authority.
+"""Pure proposal scoring; observation provenance is not established here.
 
 No provider runner, execution components, I/O, or persistence. Callers supply
 observations; expected answers are never part of the public ProviderRequest.
@@ -139,7 +139,7 @@ def score(case_id: str, observation: ResponseObservation | FailureObservation) -
 class BatchResult:
     """Counts, not percentages. Zero denominators mean not assessed."""
 
-    evidence: str = field(default="evaluator_verification_not_groq_quality", init=False)
+    evidence: str = field(default="scored_observations_source_unverified", init=False)
     results: tuple[CaseResult, ...]
     total_observations: int
     unobserved_case_ids: tuple[str, ...]
@@ -167,8 +167,14 @@ def assess(observations: Iterable[tuple[str, ResponseObservation | FailureObserv
             raise ValueError("Duplicate evaluation case ID")
         seen.add(case_id)
         results.append(score(case_id, observation))
+    return _summarize(tuple(results))
+
+
+def _summarize(results: tuple[CaseResult, ...]) -> BatchResult:
+    """Internal aggregation of records scored by assess or the fixed collector."""
+    seen = {result.case_id for result in results}
     return BatchResult(
-        results=tuple(results), total_observations=len(results),
+        results=results, total_observations=len(results),
         unobserved_case_ids=tuple(case.case_id for case in CASES if case.case_id not in seen),
         failures=MappingProxyType({code: sum(r.failure is code for r in results)
                                    for code in ProviderFailure}),

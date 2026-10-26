@@ -115,6 +115,15 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
+**Current collection increment:** A bounded programmatic collector now borrows
+an adapter to visit the eight cases once, retaining scored results and stopping
+on operational failure. Offline fixture verification is accepted after final review;
+it establishes neither Groq quality nor live provenance. Cleanup stays with the
+caller. No CLI, persistence or execution integration is added. 5B remains closed,
+5C remains open, and live collection remains unauthorized. The accepted scorer
+account below describes the original increment; current provenance labels and
+collection behavior are recorded in ARCHITECTURE.md.
+
 **Current 5C increment:** The authorized offline portion now provides a pure
 proposal scorer, eight synthetic cases and deterministic verification, accepted
 after final review. It compares supplied response/failure observations without running

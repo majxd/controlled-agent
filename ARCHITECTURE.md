@@ -25,6 +25,87 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
+## Milestone 5C bounded proposal collection (open, accepted after final review)
+
+The accepted offline scorer now has a separately authorized programmatic
+`proposal_collection.collect(adapter)` caller. This increment is implemented and
+verified with offline fixtures only. 5B stays closed; overall 5C stays open. The
+original scorer section below, including its original evidence label and test
+counts, remains a historical account; current API labels are described here.
+
+The collector borrows the existing ProposalAdapter and traverses R1, R2, U1, U2,
+U3, N1, N2, N3 once in that order. Only each immutable case.request is sent; case
+IDs, expected answers and scoring labels never enter provider input. There is
+one adapter invocation per attempted case, at most eight per batch. An invocation
+is counted immediately before the call; this does not prove a remote HTTP attempt
+or receipt. No case selection, retry, fallback, resume, reset, callbacks, autonomous
+planning, CLI, persistence or execution components are added.
+
+Returned proposals and actual None are scored immediately with the existing
+score function, retaining only successfully scored CaseResult records. Incorrect
+answers and no_action continue traversal. ProviderError is caught as provider
+failure only around adapter.propose: score its fixed FailureObservation, then stop.
+Malformed provider output reaches collection as adapter INVALID_OUTPUT failure,
+not an observed malformed proposal or successful abstention. ProviderError raised
+by scoring or summarization is instead an unexpected collector failure. The
+small private _summarize helper is shared with assess; public ID validation,
+duplicate rejection, scalar matching, exclusions and denominators are unchanged.
+There is no new public API accepting pre-scored records as trusted input.
+
+CollectionResult is immutable: fixed provenance, an immutable BatchResult,
+status, adapter_invocations and stopped_case_id. Status is completed only after
+all eight cases return and score without operational failure; it is not a quality
+pass. Provider failure on the eighth case is still provider_failure. Failure
+observations count in totals, not correctness denominators. Unobserved IDs are
+derived from scored records: an interrupted or unscored current case remains
+unobserved. A stopped prefix must not be described as whole-corpus performance.
+Results contain no credentials, raw responses, exception objects/text or execution
+JSONL. The collector does not accumulate raw responses; snapshots contain scored
+records only. Original exceptions and their tracebacks are not sanitized objects.
+
+Interruptions and unexpected errors propagate with their original identity/type.
+The collector attempts to attach collection_result with interrupted or
+unexpected_failure status. Snapshot construction and attachment are best effort:
+if either raises, even an interruption, the original exception still wins. An
+exception that rejects assignment may therefore carry no partial snapshot. There
+is no registry, recovery framework, or guarantee after process termination. The
+collector never prints exceptions; callers must not render raw exception text or
+tracebacks as safe result data.
+
+The caller owns provider cleanup. Retain the returned result, or retrieve the
+best-effort attached result in an exception handler, before cleanup in finally.
+Keep cleanup errors separate and preserve an existing primary exception and its
+evidence. The collector neither enters/exits a provider context nor calls close;
+MockProvider has no cleanup interface. Cleanup failure cannot rewrite scored
+results or cause an automatic rerun. No new lifecycle wrapper is introduced.
+
+**Current provenance:** BatchResult.evidence is now the nonconfigurable
+`scored_observations_source_unverified`, replacing the original
+`evaluator_verification_not_groq_quality` API label. CollectionResult.provenance
+is fixed to `adapter_collection_source_unverified`. The scorer cannot attest
+source; even a GroqProvider can use MockTransport. No live flag, provider-type
+classification, model identity, HTTP status, token usage or cost is inferred.
+Tests/documentation identify fixture verification explicitly. A future authorized
+live run would require a separate trusted caller's attestation and reviewed
+configuration, not a collector label upgrade. No such live runner is included.
+
+Proposal quality remains separate from governance: matching a protected update
+does not permit it. Collection never calls Controller/ProviderHost, approval,
+authorization, tools, policy evaluation or execution auditing. Further live work
+requires explicit authorization, frozen corpus and maximum request budget,
+account/quota/model/data checks, safe local key entry and caller-owned cleanup.
+Existing provider timeouts are phase limits, not a total batch deadline. The prior
+unexplained unavailable failure remains unresolved. This is not Groq-quality,
+production-readiness or cost/privacy evidence.
+
+**Collector verification — 2026-10-26:** Python 3.12.14, bytecode disabled.
+Focused evaluator/collector discovery with `-B -S`: 29 passed, 2 optional-SDK
+tests skipped, 31 discovered. Full `-B -S` discovery: 326 passed, 22 optional-SDK
+tests skipped, 348 discovered; existing PTY tests used PTY-capable permissions.
+The reviewed SDK environment was unavailable, so SDK-enabled discovery and the
+two new SDK/MockTransport checks were not executed. No packages were installed.
+These are fixture verification results, not Groq-quality or live evidence.
+
 ## Milestone 5C offline proposal evaluation (open)
 
 The authorized offline portion adds `proposal_evaluation.py` and its deterministic

@@ -12,6 +12,13 @@ when required.
 
 ## Status
 
+**Current collection increment:** The bounded programmatic collector is implemented
+with offline fixture verification, accepted after final review. It borrows an adapter,
+visits the eight cases once, and retains scored results without executing tools.
+Source provenance remains unverified; no live runner, CLI or persistence is added.
+5B stays closed and overall 5C stays open. The scorer account below records its
+earlier accepted scope; historical evidence and limitations remain unchanged.
+
 **Current 5C increment:** The pure offline proposal scorer and eight-case synthetic
 corpus are implemented with deterministic verification, accepted after final review.
 Fixture and Mock results verify the evaluator, not Groq quality. 5B remains closed;
@@ -243,6 +250,53 @@ requires separate authorization, reviewed collection/retention, request budget,
 model/account/quota/data prerequisites and caller-owned provider cleanup. The
 earlier unavailable failure remains unresolved. See the
 [case matrix and scoring contract](ARCHITECTURE.md#milestone-5c-offline-proposal-evaluation-open).
+
+## Bounded proposal collection (5C, accepted after final review)
+
+`controlled_agent.proposal_collection.collect(adapter)` returns an immutable
+CollectionResult. It visits the existing eight cases in order, passing only each
+case.request to the borrowed ProposalAdapter once. Expected answers and labels
+stay local. There is no CLI, persistence, execution, retry, fallback or resume.
+
+```python
+from controlled_agent.mock_provider import MockProvider
+from controlled_agent.provider import ProposalAdapter
+from controlled_agent.proposal_collection import collect
+
+# Offline fixture collection only. Mock has no resources to close.
+result = collect(ProposalAdapter(MockProvider()))
+# Eight actual no_action responses; completion does not mean eight correct answers.
+```
+
+The result holds batch (existing scoring flags/counts/unobserved IDs), status,
+adapter_invocations, stopped_case_id and fixed provenance. Responses, including
+no_action and mismatches, are scored and traversal continues. ProviderError only
+from adapter.propose becomes a failure observation and stops the batch. A final
+case failure is still provider_failure; invocation counts are not HTTP counts.
+Malformed provider output becomes INVALID_OUTPUT, not no_action. Other errors
+and interruptions propagate unchanged; collection_result attachment is best
+effort and never replaces the original exception if building/attaching fails.
+Do not print raw exceptions or tracebacks as collection diagnostics.
+
+For caller-owned resource providers, retain the returned result or retrieve
+getattr(error, "collection_result", None) before cleanup in finally. The caller
+must preserve its primary exception/result and handle cleanup errors separately;
+collection never calls close or supplies a lifecycle wrapper. No live use is
+authorized by this example. Mock has no close method.
+
+Current BatchResult.evidence is fixed to
+`scored_observations_source_unverified`; the original scorer used
+`evaluator_verification_not_groq_quality`. CollectionResult.provenance is fixed
+to `adapter_collection_source_unverified`. Neither is configurable, and neither
+attests live origin. SDK/MockTransport fixtures cannot become live evidence by
+provider-type inspection. Future live attestation requires separate trusted
+caller configuration and authorization. No model/token/cost metadata is inferred.
+
+Results contain no raw responses, credentials or exception text, and never enter
+execution JSONL or confer authority. An incomplete prefix is not whole-corpus
+quality evidence. Historical test counts remain historical; the earlier
+unexplained unavailable failure remains unresolved. See the
+[collection contract](ARCHITECTURE.md#milestone-5c-bounded-proposal-collection-open-accepted-after-final-review).
 
 ## Tests and module boundaries
 

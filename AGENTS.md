@@ -27,10 +27,11 @@
   the bounded one-shot integration implemented in 5B.1–5B.4. Historical evidence
   and limitations remain unchanged; the provider_demo entry point has no live
   verification claim. The scripted CLI remains unchanged. Milestone 5C remains
-  open: only its authorized pure offline scorer, eight synthetic cases and
+  open: its authorized pure offline scorer, eight synthetic cases and
   deterministic evaluator verification are implemented and accepted after final review.
-  Fixtures and Mock results do not measure Groq quality. Further live inference
-  and scope beyond this offline evaluation remain unauthorized.
+  The separately authorized bounded programmatic collector is implemented with
+  offline fixture verification, accepted after final review. Fixtures and Mock results
+  do not measure Groq quality. Live collection and further scope remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes
@@ -166,6 +167,17 @@
   response or exception text, stay separate from execution JSONL, and grant no
   authority. A protected-target proposal can match intent yet require governance
   denial. Fixture results verify the evaluator, not Groq or broader model quality.
+- The separate collector borrows one adapter and visits the fixed eight cases
+  once in order, passing only case.request. Count each invocation immediately
+  before calling; only successfully scored records enter results. ProviderError
+  is a provider failure only from adapter.propose, and stops the batch. Other
+  errors/interruptions propagate unchanged; partial-result attachment is best
+  effort and must never replace the original exception. No retries, resume,
+  execution, persistence, or resource cleanup belongs in the collector. Callers
+  retain returned/attached evidence before their own cleanup. Current score
+  evidence is scored_observations_source_unverified; collection provenance is
+  adapter_collection_source_unverified. Neither is configurable or proves live
+  origin; fixtures and SDK/MockTransport results remain offline verification.
 - Default to denial for malformed requests, unknown tools or targets, absent
   permissions, and unresolved policy. A hard denial cannot become approval.
 - The executor accepts only an internal single-use authorization reference and

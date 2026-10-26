@@ -4,6 +4,10 @@
 accepted after final review; 5C remains open and 5B remains closed. Decision 25 records
 this evaluator-only scope. All earlier milestone accounts below remain historical.
 
+**Current collection increment:** A separately authorized bounded programmatic
+collector is implemented with offline fixture verification, accepted after final review.
+Decision 26 records current collection/provenance behavior; 5C remains open.
+
 This records the agreed direction for Controlled Agent's first MVP. Milestones
 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C end-to-end
 verification passed; its documentation-only closure adds no architecture or runtime
@@ -703,3 +707,31 @@ Fixture/Mock results verify this evaluator only, not Groq quality; historical li
 smoke tests are not a benchmark. 5C remains open; live evaluation, collection and
 retention require separate authorization. No production, cost/privacy or broader
 model-quality claim follows, and the unexplained unavailable failure remains open.
+
+## 26. Milestone 5C: Bounded collection, unverified source, caller-owned cleanup
+
+**Decision:** Add collect(adapter) over the existing eight cases in order. Send
+only case.request, invoke at most once per case, and retain only scored records.
+Reuse score and a small private aggregation helper shared with assess; keep all
+public validation and scoring rules. No CLI, persistence, execution integration,
+provider changes, dependencies, retries, fallback, resume or state reset.
+
+**Failure contract:** Only ProviderError from adapter.propose becomes a fixed
+failure observation and stops collection. A scoring/summarization ProviderError
+is unexpected. Interruptions and unexpected exceptions retain original identity
+and type; attaching a partial collection_result is best effort. Construction or
+attachment failure never replaces the primary exception. Invocation counts are
+not remote HTTP counts; unscored cases remain unobserved. A final-case failure
+is not completion. Quality mismatch or no_action is an observation, not a stop.
+
+**Ownership and provenance:** Borrow the adapter; the caller retains returned or
+attached results before owning cleanup and handling cleanup errors separately.
+No new lifecycle framework. Replace the original scorer API evidence label with
+fixed scored_observations_source_unverified. Collection uses fixed
+adapter_collection_source_unverified, never a configurable live flag. Provider
+type cannot attest live origin because transports may be mocked. Historical
+fixture evidence remains fixture verification; future live attestation belongs
+to a separately authorized trusted caller. No metadata absent from the provider
+interface is invented. Results retain no raw responses or exception text and
+never become execution audit or authority. 5B remains closed and 5C open; the
+unexplained unavailable failure and existing limitations remain unresolved.

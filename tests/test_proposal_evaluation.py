@@ -236,7 +236,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(batch.failures[ProviderFailure.INVALID_OUTPUT], 1)
         self.assertEqual(set(batch.failures), set(ProviderFailure))
         self.assertNotIn("PRIVATE_MALFORMED", repr(batch))
-        self.assertEqual(batch.evidence, "evaluator_verification_not_groq_quality")
+        self.assertEqual(batch.evidence, "scored_observations_source_unverified")
         with self.assertRaises(TypeError):
             batch.failures[ProviderFailure.TIMEOUT] = 0
         with self.assertRaises(FrozenInstanceError):
@@ -275,6 +275,24 @@ class EvaluationTests(unittest.TestCase):
                 evaluation.assess([("N1", observation), (unknown, observation)])
             with self.assertRaisesRegex(ValueError, "^Unknown evaluation case ID$"):
                 evaluation.score(unknown, observation)
+
+    def test_private_aggregation_matches_public_assessment_for_partial_batches(self):
+        observations = [
+            ("R1", evaluation.ResponseObservation(response=FIXTURES["R1"])),
+            ("U1", evaluation.ResponseObservation(response=None)),
+            ("N1", evaluation.ResponseObservation(response=None)),
+            ("N2", evaluation.ResponseObservation(response={})),
+            ("U3", evaluation.FailureObservation(failure=evaluation.ProviderFailure.TIMEOUT)),
+        ]
+        for length in range(len(observations) + 1):
+            subset = observations[:length]
+            records = tuple(evaluation.score(case_id, value) for case_id, value in subset)
+            self.assertEqual(evaluation._summarize(records), evaluation.assess(subset))
+        batch = evaluation.assess(observations)
+        self.assertEqual((batch.total_observations, batch.correctness_assessed,
+                          batch.structure_assessed, batch.intent_matches,
+                          batch.abstention_assessed, batch.correct_abstentions), (5, 4, 2, 2, 2, 1))
+        self.assertEqual(batch.failures[evaluation.ProviderFailure.TIMEOUT], 1)
 
     def test_mock_adapter_compatibility_passes_only_public_request_once(self):
         for case in evaluation.CASES:
