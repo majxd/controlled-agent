@@ -13,6 +13,15 @@ records the separately authorized optional 5B.2 Groq provider and offline verifi
 Decision 23 records the authorized 5B.3 programmatic host handoff and stop policy.
 Decision 24 records the separately authorized 5B.4 one-shot provider demo.
 
+**Current closure status — 2026-10-26:** Milestone 5B is closed for the bounded
+one-shot integration implemented by decisions 21–24 under ADR-5A. This is a
+documentation-only acceptance review, not a new architecture decision or
+implementation milestone. Earlier entries remain verbatim historical records;
+their deferrals and closure statements describe those increments. Milestone 5C
+remains open and unimplemented, and further live inference remains unauthorized.
+The [closure summary](ARCHITECTURE.md#milestone-5b-closure--2026-10-26)
+separates contract evidence, review conclusions, and continuing limitations.
+
 The user-approved requirements take precedence over implementation convenience. Changes to scope or major architectural decisions require review; meaningful changes must be recorded here. The choice to reuse the status-update tool for the forbidden path is a small demo design choice made within the approved options.
 
 ## 1. Enforce governance deterministically outside the LLM

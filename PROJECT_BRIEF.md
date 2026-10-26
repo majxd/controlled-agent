@@ -115,6 +115,14 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
+Milestone 5B is closed as of 2026-10-26 for the bounded one-shot provider
+integration implemented in 5B.1–5B.4. This documentation-only review adds no
+runtime behavior or new test/live evidence. Milestone 5C remains open and
+unimplemented; model-quality evaluation and further live inference are not
+authorized. See the [5B closure summary](ARCHITECTURE.md#milestone-5b-closure--2026-10-26)
+for the review basis and retained limitations. The milestone accounts below
+retain their historical scope.
+
 Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed: immutable contracts,
 deterministic governance, trusted single-use authorization, synchronous human
 approval, executor, bounded fake tools, JSONL audit persistence, bounded proposal

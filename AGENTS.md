@@ -19,11 +19,16 @@
   covers human decline, protected-target denial, and human-approved synthetic
   local update, with persisted auditing and cleanup; see ARCHITECTURE.md. It is
   separate from the earlier read-only test and offline evidence. The prior
-  unavailable failure remains unexplained; no additional milestone is closed.
+  unavailable failure remains unexplained; that live evidence alone closed no
+  additional milestone.
   Milestone 5B.4 implements the separately authorized one-shot provider demo,
   Mock by default, with offline verification; final user review approved and closed 5B.4.
-  The scripted CLI remains unchanged. Further live inference and remaining
-  5B/5C scope beyond this bounded demo remain unauthorized.
+  Milestone 5B is closed by documentation-only review on 2026-10-26, limited to
+  the bounded one-shot integration implemented in 5B.1–5B.4. Historical evidence
+  and limitations remain unchanged; the provider_demo entry point has no live
+  verification claim. The scripted CLI remains unchanged. Milestone 5C remains
+  open and unimplemented. Further live inference and scope beyond this bounded
+  integration remain unauthorized.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes

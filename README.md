@@ -12,6 +12,14 @@ when required.
 
 ## Status
 
+Milestone 5B is closed by documentation-only review on 2026-10-26, limited to
+the bounded one-shot integration in 5B.1–5B.4. Mock remains the provider-demo
+default; the scripted CLI is unchanged. Milestone 5C remains open and unimplemented.
+This adds no live verification of `provider_demo`, model-quality evaluation,
+production-readiness or cost/privacy guarantee, or authorization for new inference.
+See the [5B closure summary](ARCHITECTURE.md#milestone-5b-closure--2026-10-26).
+The evidence and milestone status statements below retain their historical scope.
+
 Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed. Milestone 4C
 end-to-end verification passed on baseline `8697607b3fe25ae3a84d6903ace0326ed79897b0`:
 228 tests passed on Python 3.12.14, with automated pseudo-terminal smoke tests and

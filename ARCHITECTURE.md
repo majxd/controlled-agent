@@ -25,6 +25,57 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
+## Milestone 5B closure — 2026-10-26
+
+Milestone 5B is closed for the user-authorized bounded one-shot integration
+implemented in 5B.1–5B.4, reviewed at baseline
+`0ca46106818fb96760650cc6d47e84cab6861549`. This is documentation-only closure,
+not another implementation milestone or a change to ADR-5A. Historical sections
+below remain verbatim; statements that overall 5B was still open describe the
+status at those earlier increments, not the current closure status.
+
+**Documented requirements and implementation reviewed:**
+
+- ProviderRequest carries public/synthetic data only. MockProvider and the optional
+  GroqProvider produce untrusted data; ProposalAdapter returns a copied plain
+  proposal or None, with no execution authority. Existing provider/SDK tests cover
+  structural boundaries, strict decoding, fixed failures and no submission on
+  no_action/failure. Semantic and authority decisions remain with governance.
+- ProviderHost submits each non-None proposal once through Controller.submit.
+  Existing host tests cover permanent stopping, stopped misuse, swallowed reentry,
+  unchanged reports/attached interruptions, preserved session state and unused
+  queued responses. Stopping does not cancel or roll back an action already begun.
+- The one-shot demo owns one session and provider/writer cleanup; the host borrows
+  components. Existing demo tests cover canonical fresh approval, real PTY
+  typeahead rejection, correlated persisted JSONL, handler counts/state, cleanup
+  and output failures, and retained completed/uncertain effects. Mock is the default
+  and needs no optional packages. The scripted CLI and execution core are unchanged.
+
+**Review conclusion:** Source, existing test assertions, documentation and Git
+history support closure of this bounded scope; no substantive closure-blocking
+gap was identified. This is a review judgment against the authorized scope, not
+an additional guarantee or a claim that every deferred ADR-5A capability is built.
+Model-quality evaluation, provider metrics, feedback and autonomous loops are not
+completion requirements for this bounded closure and remain unimplemented.
+
+**Evidence retained, not rerun:** The 2026-10-25 Python 3.12.14 offline results
+remain historical: 25 focused tests passed; full `-B` discovery with Groq 1.7.0 /
+HTTPX 0.28.1 passed 317 with 0 skipped; `-B -S` passed 297 with 20 skipped.
+The separately user-reported live evidence remains the 2026-10-19 connectivity/
+decoding-only test, the 2026-10-19 governed read-only test, and the 2026-10-21
+three-case synthetic local-tool verification. None verifies the new provider_demo
+entry point live. No tests were rerun, no inference was performed, and no
+credentials or runtime logs were accessed during closure. Git state/history,
+source/test inspection and documentation diff/whitespace checks are its
+verification activities.
+
+**Continuing limits:** Milestone 5C remains open and unimplemented. The earlier
+unexplained `unavailable` failure remains unresolved. No broader model-quality,
+production-readiness, cost/quota, privacy/data-control or exactly-once guarantee
+is established. Existing sequential-process, trusted-callback, fixed-review-state,
+post-buffering size, phase-timeout and nontransactional JSONL limitations remain.
+Closing 5B authorizes no further live inference or scope expansion.
+
 ## Planned components and boundaries
 
 | Component | Responsibility and boundary |
