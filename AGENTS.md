@@ -2,6 +2,12 @@
 
 ## Working agreement
 
+- Final acceptance closed the current local MVP/prototype scope on 2026-10-31,
+  including bounded 5B and 5C. The seven-criterion evidence matrix and
+  remaining limitations are in ARCHITECTURE.md. This adds no features or
+  production-readiness, broad model-quality, or live provider_demo claim.
+  Further live inference requires separate authorization; the earlier
+  unexplained unavailable failure remains unresolved.
 - Act as an implementation partner. Follow the user's authorized milestone;
   do not silently expand product or architectural scope.
 - Current status: Milestones 2A, 2B, 3A, 3B, 3C, 4A, and 4B are approved and committed.

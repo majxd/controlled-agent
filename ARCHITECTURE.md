@@ -25,6 +25,46 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
+## Local MVP acceptance — 2026-10-31
+
+Final acceptance closes the current local MVP/prototype scope, including bounded
+5B and 5C, against the seven success criteria in PROJECT_BRIEF.md. The matrix
+identifies existing implementation and test evidence; it does not add new
+requirements. Earlier milestone records below retain their historical scope.
+
+| Brief criterion | Existing implementation and test evidence |
+| --- | --- |
+| 1. Permitted LOW-risk read executes with correlated audit | `demo.py` supplies read policy; `authorization.py` and `executor.py` gate and dispatch. `test_governance.py::test_read_allowed_on_both_targets` checks LOW/ALLOW; `test_executor.py::test_allowed_reads_dispatch_once_on_both_targets_and_audit_in_order` checks action identity, handler counts and lifecycle; `test_provider_host.py::test_read_handoff_once_returns_original_report_and_uses_host_identity` reads back correlated JSONL. |
+| 2. Editable MEDIUM-risk update requires exact approval and executes once; decline/cancel never dispatch | `demo.py`, `approval.py`, `authorization.py` and `executor.py` bind review and issuance to the action. `test_governance.py::test_same_update_tool_changes_decision_with_context_for_every_status`, `test_executor.py::test_approved_mutation_binds_review_consumption_and_handler_identity`, and `test_audit.py::test_protected_deny_decline_cancel_and_malformed_never_dispatch` cover classification, exact binding, effects and non-dispatch. |
+| 3. Identifiable protected or critical mutations are HIGH-risk hard denials | `demo.py` provides trusted target policy; `governance.py` applies it. `test_governance.py::test_protected_denial_precedes_invalid_arguments_permission_and_target_mismatch` includes a claimed approval and `closed`; `test_protected_or_critical_alone_is_a_hard_deny` checks each condition. The real-writer denial test above checks no handler effect. |
+| 4. Missing permission, unknown tools/targets and malformed proposals fail before handlers; submissions get IDs | `controller.py` assigns host IDs and `submission.py` parses before governed dispatch. `test_controller.py::test_host_id_and_caller_precede_parse_submission_is_first` and `test_malformed_audited_without_fake_action_or_governance`, `test_governance.py::test_missing_permissions_deny_even_low_risk_reads`, `test_executor.py::test_denial_decline_and_cancellation_cannot_dispatch`, and `test_provider.py::test_unknown_tool_reaches_governance` / `test_unknown_target_reaches_governance` exercise admission and no-dispatch paths. |
+| 5. Missing, forged, altered, pending, denied or consumed authority cannot dispatch; approval claims confer no authority | `authorization.py` owns issuance/consumption and `executor.py` accepts only internal references. `test_executor.py::test_forged_copied_foreign_and_data_objects_never_dispatch`, `test_execute_accepts_no_replacement_fields_or_configuration`, `test_replay_is_correlated_and_never_invokes_again`, and `test_approval.py::test_pending_binding_and_audit_order_close_before_result_and_publication` cover these boundaries; denial/claim tests above cover no issuance. |
+| 6. Submission, decisions, approval and execution outcomes are observable; audit failures gate or preserve uncertainty | `audit.py`, `controller.py` and `executor.py` report correlated lifecycle and separate effects from audit failures. `test_audit.py::test_all_current_shapes_round_trip_in_append_order`, `test_both_blocked_shapes_and_handler_failure_are_persisted`, `test_issuance_sync_failure_all_gates_prevents_authority_and_reserves_id`, and `test_completion_sync_failure_preserves_actual_mutation_and_consumed_reference` cover persistence and gates; `test_executor.py::test_partial_handler_failure_and_interruption_preserve_uncertain_effect` covers uncertainty. |
+| 7. Governance is domain-neutral and model proposals cannot bypass it | `governance.py` uses host-supplied rules; work-order policy lives in `demo.py`. `test_governance.py::test_core_supports_an_unrelated_domain_and_risk_does_not_choose_decision` exercises another domain. `provider.py` / `provider_host.py` return data and route submitted proposals through `Controller.submit`; provider-host handoff, denial and no-action tests verify that boundary. |
+
+No substantive acceptance blocker was found within these criteria. The previously
+reported Python 3.12.14 SDK-enabled `-B` discovery passed 348 tests with zero
+skips; the focused evaluator/collector run passed 31. The full `-B -S` run
+previously passed 326 with 22 skipped. Git comparison from the SDK-tested
+baseline `b46db81b05f45a52cf3bc1ab4602fe4bb2237b33` to the acceptance baseline
+`368ac532be5292e2aef7874051af920568ce0bf5` shows only project-document changes:
+runtime code, tests, packaging and dependency declarations are unchanged. These
+are existing results, not new test runs for this documentation closure.
+
+Bounded 5B one-shot integration and bounded 5C synthetic evaluation were already
+closed. The 5C user-attested batch is proposal-quality evidence for eight fixed
+synthetic cases only; its source-unverified labels and separate offline evidence
+remain as recorded below. It does not verify execution or the live provider_demo
+entry point. The earlier unexplained `unavailable` failure remains unresolved.
+
+This is a local MVP/prototype, not a production-ready system or a sandbox against
+arbitrary in-process code. It uses fake work orders, trusted local configuration
+and in-memory, non-recoverable authority. JSONL is not tamper-resistant or
+transactional; storage failure and post-dispatch interruption can leave audit or
+effect uncertainty, and fsync is not an absolute power-loss guarantee. No broad
+model-quality, cost/privacy, exactly-once, real industrial, or live provider_demo
+claim follows. Further live inference requires separate authorization.
+
 ## Milestone 5C bounded synthetic evaluation — closure
 
 **Status:** Documentation-only closure of the bounded 5C synthetic evaluation

@@ -12,6 +12,13 @@ when required.
 
 ## Status
 
+**Local MVP acceptance:** The current local MVP/prototype scope, including bounded
+5B and 5C, was accepted and closed on 2026-10-31. The [acceptance matrix](ARCHITECTURE.md#local-mvp-acceptance--2026-10-31)
+maps the seven brief criteria to existing implementation and tests. Earlier status
+accounts below remain historical. This is not production readiness, broad model
+quality, or live provider_demo verification; the earlier unexplained unavailable
+failure remains unresolved. Further live inference needs separate authorization.
+
 **5C closure:** Documentation-only closure of bounded synthetic evaluation was
 approved on 2026-10-31. The [closure summary](ARCHITECTURE.md#milestone-5c-bounded-synthetic-evaluation--closure)
 separates a user-attested eight-case live batch from offline verification and
