@@ -26,12 +26,16 @@
   Milestone 5B is closed by documentation-only review on 2026-10-26, limited to
   the bounded one-shot integration implemented in 5B.1–5B.4. Historical evidence
   and limitations remain unchanged; the provider_demo entry point has no live
-  verification claim. The scripted CLI remains unchanged. Milestone 5C remains
-  open: its authorized pure offline scorer, eight synthetic cases and
-  deterministic evaluator verification are implemented and accepted after final review.
+  verification claim. The scripted CLI remains unchanged. Milestone 5C includes
+  its authorized pure offline scorer, eight synthetic cases and deterministic
+  evaluator verification, accepted after final review.
   The separately authorized bounded programmatic collector is implemented with
   offline fixture verification, accepted after final review. Fixtures and Mock results
-  do not measure Groq quality. Live collection and further scope remain unauthorized.
+  do not measure Groq quality. Further live collection and scope remain unauthorized.
+  A user-attested live synthetic batch and separate offline SDK/helper checks are
+  recorded in ARCHITECTURE.md. Bounded 5C synthetic evaluation was approved and
+  closed on 2026-10-31; 5B remains closed.
+  The batch does not establish broader model quality or execution verification.
   Do not add dependencies or commit unless requested.
 - Read `PROJECT_BRIEF.md`, `ARCHITECTURE.md`, and `DECISIONS.md` before making
   implementation or architectural changes. Explicit user direction takes

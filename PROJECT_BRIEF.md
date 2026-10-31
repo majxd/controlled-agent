@@ -115,6 +115,13 @@ execution when logging fails and must not automatically retry uncertain effects.
 
 ## Current status
 
+**5C closure:** Closure of the bounded synthetic evaluation scope was approved
+on 2026-10-31. A user-attested eight-case live batch and separate offline
+SDK/helper checks are described in the [closure summary](ARCHITECTURE.md#milestone-5c-bounded-synthetic-evaluation--closure).
+5B stays closed. The batch does not establish
+execution verification or broad model quality. Earlier status accounts below are
+historical; the unexplained unavailable failure remains unresolved.
+
 **Current collection increment:** A bounded programmatic collector now borrows
 an adapter to visit the eight cases once, retaining scored results and stopping
 on operational failure. Offline fixture verification is accepted after final review;

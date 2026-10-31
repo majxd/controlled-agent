@@ -25,6 +25,45 @@ inside this process is outside the threat model. This is an MVP/prototype, not
 a production-ready system or security sandbox. Its controls apply through the
 defined interfaces; a coding change that adds a bypass defeats that boundary.
 
+## Milestone 5C bounded synthetic evaluation — closure
+
+**Status:** Documentation-only closure of the bounded 5C synthetic evaluation
+scope was approved on 2026-10-31. 5B remains closed. This closure adds no runtime
+behavior. Earlier 5C sections below retain their historical status and verification
+statements.
+
+**User-attested live batch:** The user attested to one completed collection
+batch using the fixed synthetic corpus. The retained summary's SHA-256 is
+`37cb96890b1b39693fe8a65090e851ed2ff0734c7daf62912aaa1dad3dbc664c`.
+Its eight observations required eight adapter invocations: structural validity
+was 5/5 assessed proposals, exact requested-action matches were 8/8 responses
+including no_action, and correct abstentions were 3/3 expected-no_action cases.
+The summary records no provider failures, no unobserved cases, and provider
+cleanup `ok`. The user separately reported terminal retention `ok`; the summary
+file itself does not attest to the terminal diagnostic or its own durability.
+
+The retained labels remain `adapter_collection_source_unverified` and
+`scored_observations_source_unverified`. The separate caller attestation is
+`caller_attests_intended_live_attempt_unverified`; neither it nor the file hash
+independently proves live origin, remote request count, or model identity. This
+batch assesses proposal matching only. It does not verify execution, approval,
+governance, or the live provider_demo entry point. A protected-target proposal
+can match intent while downstream governance must deny its execution.
+
+**Separate offline evidence:** On Python 3.12.14 with Groq 1.7.0 and HTTPX
+0.28.1, the previously reported SDK-enabled `-B` runs passed 31 focused tests
+and 348 full-suite tests, with zero skips. These used dummy credentials,
+MockTransport and blocked network/DNS. The revised temporary caller helper
+separately passed 20 offline tests under `-I -B`, with zero skips; its tests
+included PTY, cleanup and retention-failure checks. Fixture results verify the
+implementation and helper, not live provenance or Groq quality. No tests or
+inference were rerun for this documentation review.
+
+This is one small fixed-corpus observation, not a broad model-quality evaluation,
+production-readiness assessment, or cost/privacy guarantee. The earlier
+unexplained `unavailable` failure remains unresolved. Further live inference
+requires separate authorization; no runtime result or helper is added to Git.
+
 ## Milestone 5C bounded proposal collection (open, accepted after final review)
 
 The accepted offline scorer now has a separately authorized programmatic

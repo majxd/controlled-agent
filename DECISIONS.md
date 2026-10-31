@@ -1,5 +1,11 @@
 # Architectural Decisions
 
+**Current 5C status:** Documentation-only closure of bounded synthetic evaluation
+was approved on 2026-10-31. The user-attested live batch and separate offline
+SDK/helper verification are recorded in the [5C closure](ARCHITECTURE.md#milestone-5c-bounded-synthetic-evaluation--closure).
+5B stays closed. Earlier status statements below
+are historical; source-unverified provenance and existing limitations remain.
+
 **Current 5C increment:** The approved offline scorer/corpus is implemented,
 accepted after final review; 5C remains open and 5B remains closed. Decision 25 records
 this evaluator-only scope. All earlier milestone accounts below remain historical.

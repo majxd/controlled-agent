@@ -12,6 +12,13 @@ when required.
 
 ## Status
 
+**5C closure:** Documentation-only closure of bounded synthetic evaluation was
+approved on 2026-10-31. The [closure summary](ARCHITECTURE.md#milestone-5c-bounded-synthetic-evaluation--closure)
+separates a user-attested eight-case live batch from offline verification and
+retains source-unverified provenance. 5B stays closed. The batch does not verify
+execution, broader model quality, or live
+provider_demo behavior. Earlier status accounts below are historical.
+
 **Current collection increment:** The bounded programmatic collector is implemented
 with offline fixture verification, accepted after final review. It borrows an adapter,
 visits the eight cases once, and retains scored results without executing tools.
